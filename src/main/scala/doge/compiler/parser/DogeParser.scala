@@ -1,7 +1,8 @@
 package doge.compiler.parser
 
 
-import doge.compiler.types.{TypeSystem, Typer}
+import doge.compiler.backend.GenerateClassFiles
+import doge.compiler.types.{LetExprTyped, TypedAst, TypeSystem, Typer}
 
 import scala.util.parsing.combinator.RegexParsers
 import doge.compiler.ast._
@@ -43,6 +44,8 @@ object DogeParser extends RegexParsers {
       val var1 = TypeSystem.newVariable
       TypeSystem.Function(var1, var1)
     }
+    // A hack just to make samples compile.
+    // Ideally we expand the type system with a notion of "varargs" or some such.
     val printlnType = {
       TypeSystem.FunctionN(
         TypeSystem.Unit,
@@ -59,22 +62,28 @@ object DogeParser extends RegexParsers {
     test(rep(expr), testProgram) { program =>
       println(program.mkString("\n"))
       println(" -- TYPED --")
-      val zero = (cheaterEnv, Seq.empty[TypeSystem.Type])
+      val zero = (cheaterEnv, Seq.empty[TypedAst])
       // This is a complete hack to share let environment since we INVERTED the let syntax for Doge
-      val types = program.foldLeft(zero) { case ((env, typeResults), nextAst) =>
-        val tpe = Typer.typeTree(nextAst, env)
+      val typeTrees = program.foldLeft(zero) { case ((env, typeResults), nextAst) =>
+        val typedTree = Typer.typeTree(nextAst, env)
         val nextEnv = nextAst match {
           case LetExpr(id, _, _, _) =>
-            println(s"Defined: $id :: $tpe")
-            env.withAdded(id -> tpe)
+            env.withAdded(id -> typedTree.tpe)
           case _ => env
         }
-        (nextEnv, typeResults :+ tpe)
+        (nextEnv, typeResults :+ typedTree)
       }._2
+      println(typeTrees.mkString("\n"))
       //println(program.zip(types).map { case (ast, t) => s"$ast :: $t"}.mkString("\n"))
       println("Types are sound!")
       println(" -- EVALUATED -- ")
       doge.compiler.interpreter.Interpreter.interpret(program)
+      println(" -- Compiled -- ")
+      GenerateClassFiles.makeClassfile(
+        typeTrees.collect({ case l: LetExprTyped => l }),
+        new java.io.File("."),
+        "test"
+      )
       "Program complete!"
     }
   }
@@ -90,6 +99,14 @@ object DogeParser extends RegexParsers {
       case Error(msg, next) => println(s"Error: $msg, at ${next.pos.line}:${next.pos.column}")
     }
     println(" -- END --")
+  }
+
+  def parseProgram(input: String) = {
+    parseAll(rep(expr), input) match {
+      case Success(result,_) => result
+      case Failure(msg, next) => sys.error(s"Failure: $msg, at ${next.pos.line}:${next.pos.column}")
+      case Error(msg, next) => sys.error(s"Error: $msg, at ${next.pos.line}:${next.pos.column}")
+    }
   }
 
   lazy val SO = literal("SO")
@@ -111,11 +128,11 @@ object DogeParser extends RegexParsers {
   }
 
   lazy val idRef: Parser[IdReference] =
-    id map { name => IdReference(name) }
+    positioned(id map { name => IdReference(name) })
 
   // TODO - Fail to parse invalid literals.
   lazy val intLiteral: Parser[IntLiteral] =
-    "\\d+".r map { value => IntLiteral(value.toInt) }
+    positioned("\\d+".r map { value => IntLiteral(value.toInt) })
 
   // SO <id>*
   lazy val argList: Parser[Seq[String]] =
@@ -127,13 +144,13 @@ object DogeParser extends RegexParsers {
 
 
   lazy val letExpr: Parser[LetExpr] =
-     WOW ~ id ~ opt(typeList) ~ opt(argList) ~ apExpr ^^ {
+    positioned(WOW ~ id ~ opt(typeList) ~ opt(argList) ~ apExpr ^^ {
        case ignore ~ id ~ types ~ args ~ result => LetExpr(id, types.getOrElse(Nil), args.getOrElse(Nil), result)
-     }
+     })
   lazy val apExpr: Parser[ApExpr] =
-    (((MANY | VERY | MUCH) ~> idRef ) ~ rep(expr) <~ EXCL) ^^ {
+    positioned((((MANY | VERY | MUCH) ~> idRef ) ~ rep(expr) <~ EXCL) ^^ {
       case id ~ args => ApExpr(id, args)
-    }
+    })
 
   lazy val literal: Parser[Literal] = intLiteral
 
