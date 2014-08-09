@@ -48,15 +48,22 @@ You should see output like the following:
     let Rain() = <Katz>
     let main() = (<PrintLn> (<Big> <Doge>) <Rain> <Katz>)
      -- Typed --
-    let Big(numbers: Int) = (<Plus> <numbers> 1)
-    let Doge() = (<IS> 5)
-    let Katz() = (<Big> <Doge>)
-    let Rain() = <Katz>
-    let main() = (<PrintLn> (<Big> <Doge>) <Rain> <Katz>)
-    Creating method: Big (I)I
-    Creating method: Doge ()I
-    Creating method: Katz ()I
-    Creating method: Rain ()I
+    let Big(numbers) :: int → int
+        Big(numbers)  =
+          Plus[int → int → int](numbers[int], 1[int])[int]
+    let Doge() :: int
+        Doge()  =
+          IS[?0 → ?0](5[int])[int]
+    let Katz() :: int
+        Katz()  =
+          Big[int → int](Doge[int])[int]
+    let Rain() :: int
+        Rain()  =
+          Katz[int]
+    let main() :: Unit
+        main()  =
+          PrintLn[?1 → ?2 → ?3 → Unit](Big[int → int](Doge[int])[int], Rain[int], Katz[int])[Unit]
+
      -- Compiled --
     /home/jsuereth/projects/personal/doge/test.class
 
