@@ -63,7 +63,6 @@ object GenerateClassFiles {
       // TODO - generic write method impl...
       val signature = getFunctionSignature(ast.tpe)
       // TODO - generic signature...
-      System.err.println(s"Creating method: ${ast.name} $signature")
       val mv = cw.visitMethod(ACC_PUBLIC + ACC_STATIC,
          ast.name,
          signature,

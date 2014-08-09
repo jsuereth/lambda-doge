@@ -45,7 +45,7 @@ object Compiler {
     System.err.println(parsed.mkString("\n"))
     val typed = typeWithGlobalLet(parsed).collect({ case l: LetExprTyped => l })
     System.err.println(" -- Typed -- ")
-    System.err.println(parsed.mkString("\n"))
+    System.err.println(typed.mkString("\n"))
     val clsFile = GenerateClassFiles.makeClassfile(typed, classDirectory, name)
     System.err.println(" -- Compiled -- ")
     System.err.println(clsFile.getAbsolutePath)
