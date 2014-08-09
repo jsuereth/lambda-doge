@@ -7,56 +7,58 @@ A language for those who waste their time.
 
   To build, requires [sbt](http://scala-sbt.org).  Once sbt is installed, cd into the doge directory and type:
 
-   $ sbt
-   > runMain doge.compiler.Compiler test.doge
+
+    $ sbt
+    > runMain doge.compiler.Compiler test.doge
+
 
 You should see output like the following:
 
-   [info] Compiling 1 Scala source to /home/jsuereth/projects/personal/doge/target/scala-2.11/classes...
-   [info] Running doge.compiler.Compiler test.doge
-    -- Compiling --
-   WOW
-   Big
-   SUCH Int
-   SO numbers
-   MUCH Plus numbers 1!
+    [info] Compiling 1 Scala source to /home/jsuereth/projects/personal/doge/target/scala-2.11/classes...
+    [info] Running doge.compiler.Compiler test.doge
+     -- Compiling --
+    WOW
+    Big
+    SUCH Int
+    SO numbers
+    MUCH Plus numbers 1!
+ 
+    WOW
+    Doge
+    MUCH IS 5!
+ 
+    WOW
+    Katz
+    VERY Big Doge!
+ 
+    WOW
+    Rain
+    VERY Katz!
 
-   WOW
-   Doge
-   MUCH IS 5!
-
-   WOW
-   Katz
-   VERY Big Doge!
-
-   WOW
-   Rain
-   VERY Katz!
-
-   WOW
-   main
-   MUCH PrintLn
-   VERY Big Doge!
-   MUCH Rain!
-   VERY Katz!!
-    -- Parsed --
-   let Big(numbers: Int) = (<Plus> <numbers> 1)
-   let Doge() = (<IS> 5)
-   let Katz() = (<Big> <Doge>)
-   let Rain() = <Katz>
-   let main() = (<PrintLn> (<Big> <Doge>) <Rain> <Katz>)
-    -- Typed --
-   let Big(numbers: Int) = (<Plus> <numbers> 1)
-   let Doge() = (<IS> 5)
-   let Katz() = (<Big> <Doge>)
-   let Rain() = <Katz>
-   let main() = (<PrintLn> (<Big> <Doge>) <Rain> <Katz>)
-   Creating method: Big (I)I
-   Creating method: Doge ()I
-   Creating method: Katz ()I
-   Creating method: Rain ()I
-    -- Compiled --
-   /home/jsuereth/projects/personal/doge/test.class
+    WOW
+    main
+    MUCH PrintLn
+    VERY Big Doge!
+    MUCH Rain!
+    VERY Katz!!
+     -- Parsed --
+    let Big(numbers: Int) = (<Plus> <numbers> 1)
+    let Doge() = (<IS> 5)
+    let Katz() = (<Big> <Doge>)
+    let Rain() = <Katz>
+    let main() = (<PrintLn> (<Big> <Doge>) <Rain> <Katz>)
+     -- Typed --
+    let Big(numbers: Int) = (<Plus> <numbers> 1)
+    let Doge() = (<IS> 5)
+    let Katz() = (<Big> <Doge>)
+    let Rain() = <Katz>
+    let main() = (<PrintLn> (<Big> <Doge>) <Rain> <Katz>)
+    Creating method: Big (I)I
+    Creating method: Doge ()I
+    Creating method: Katz ()I
+    Creating method: Rain ()I
+     -- Compiled --
+    /home/jsuereth/projects/personal/doge/test.class
 
 
 Once the file has been compiled, you can run the doge script via:
