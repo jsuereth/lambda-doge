@@ -31,6 +31,7 @@ object GenerateClassFiles {
     file
   }
 
+  // We ain't never gon be real class, but de javas,she needs a comstruktar.
   private def visitEmptyConstructor(cw: ClassWriter): Unit = {
       val mv = cw.visitMethod(ACC_PUBLIC, "<init>", "()V", null, null)
       mv.visitVarInsn(ALOAD, 0)
