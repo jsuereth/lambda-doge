@@ -135,7 +135,7 @@ A type constructor (TCons) is composed of a term (string) identifier and a set o
 
 Simple types are encoded as type constructors of no arguments. e.g. integers are defined as:
 
-    TInteger = TCons "int"
+    TInteger = TCons "int" []
 
 And there is a single function type, with constructor:
 
