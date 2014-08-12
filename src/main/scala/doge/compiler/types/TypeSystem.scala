@@ -26,7 +26,7 @@ object TypeSystem {
     def withAdded(types: (String, Type)*): Env
   }
 
-  def dumbEnvironment(initial: Map[String, Type] = Map.empty): Env = new Env {
+  def dumbEnvironment(initial: Map[String, Type] = Map.empty[String,Type]): Env = new Env {
     def lookup(name: String): Type = {
       initial.get(name).getOrElse {
         throw new TypeError(s"Type not found for term: $name in ${initial.mkString("\n * ","\n * ", "\n")}")
@@ -84,14 +84,6 @@ object TypeSystem {
     }
   def Simple(name: String) = TypeConstructor(name, Nil)
 
-  // Simple types are Type operators with no arguments.
-  // Here we hardcode the types for the literals in Doge.
-  val Integer = Simple("int")
-  val Bool = Simple("bool")
-  val String = Simple("String")
-  val Unit = Simple("Unit")
-
-
   // Helpers to generate unique variables
   private[this] val _nextVariableId = new java.util.concurrent.atomic.AtomicLong(0)
 
@@ -99,6 +91,22 @@ object TypeSystem {
   def newVariable: TypeVariable = TypeVariable(_nextVariableId.getAndIncrement)
 
 
+
+  // Simple types are Type operators with no arguments.
+  // Here we hardcode the types for the literals in Doge.
+  val Integer = Simple("int")
+  val Bool = Simple("bool")
+
+  // TODO - Unsupported types
+  val String = Simple("String")  // TODO - Alias this to list int?
+  val Unit = Simple("Unit")
+  val ListType = TypeConstructor("List", Seq(newVariable))
+  val MapType = TypeConstructor("Map", Seq(newVariable, newVariable))
+  val Tuple2Type = TypeConstructor("Tuple2", Seq(newVariable, newVariable))
+
+
+
+  // TODO - this is probably the wrong name...
   type Refinements = Map[Long, Type]
 
   def prune(t: Type, refinements: Refinements): Type =

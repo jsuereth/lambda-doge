@@ -16,11 +16,16 @@ class TyperSpec extends Specification { def is = s2"""
     This is a specification to check the Parser of the DOGE language
 
     The Typer should
+      type bool literals                             $typeBooleanLiterals
       type  int literals                             $typeIntLiterals
       type  references                               $typeReferences
       unfiy application types                        $unifyApplication
       unify let types                                $unifyLet
                                                         """
+
+  def typeBooleanLiterals = {
+    BoolLiteral(false) must typeAs(BoolLiteralTyped(false))
+  }
 
   def typeIntLiterals = {
      IntLiteral(1) must typeAs(IntLiteralTyped(1))

@@ -24,6 +24,10 @@ case class IntLiteralTyped(value: Int) extends LiteralTyped {
   override def toString = s"$value[int]"
   override val tpe = TypeSystem.Integer
 }
+case class BoolLiteralTyped(value: Boolean) extends LiteralTyped {
+  override def toString = s"$value[bool]"
+  override def tpe = TypeSystem.Bool
+}
 case class IdReferenceTyped(name: String, tpe: Type) extends TypedAst {
   override def toString = s"$name[$tpe]"
 }

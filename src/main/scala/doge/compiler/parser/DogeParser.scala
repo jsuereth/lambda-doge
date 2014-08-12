@@ -42,6 +42,12 @@ object DogeParser extends RegexParsers {
   lazy val intLiteral: Parser[IntLiteral] =
     positioned("\\d+".r map { value => IntLiteral(value.toInt) })
 
+  lazy val boolLiteral: Parser[BoolLiteral] =  {
+    val t = literal("true") ^^^ BoolLiteral(true)
+    val f = literal("false") ^^^ BoolLiteral(false)
+    positioned(t | f)
+  }
+
   lazy val argList: Parser[Seq[String]] =
     SO ~> rep(id)
 
@@ -59,7 +65,7 @@ object DogeParser extends RegexParsers {
       case id ~ args => ApExpr(id, args)
     })
 
-  lazy val literal: Parser[Literal] = intLiteral
+  lazy val literal: Parser[Literal] = intLiteral | boolLiteral
 
   lazy val expr: Parser[DogeAst] =
     (letExpr | apExpr | literal | idRef)

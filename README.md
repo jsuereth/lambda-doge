@@ -229,6 +229,11 @@ encodes as IADD bytecode operation.
 is erased completely (the argument expression is compiled directly inline).
 
 
+    ifs :: bool => a => a => a
+    
+is encoded as an if/else jump statement. which attempts to have lazy execute semantics.
+
+
     PrintLn :: Int => Int => Int => Int
 
 Yes, the type is super lame.  Right now we encode this pretty dumb to call `System.out.print` a bunch of times, then a `println`.

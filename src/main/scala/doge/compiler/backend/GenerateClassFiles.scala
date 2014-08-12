@@ -8,6 +8,8 @@ import doge.compiler.types.TypeSystem.{
 import java.io._
 
 import org.objectweb.asm.signature.{SignatureWriter, SignatureVisitor}
+import scalaz._
+import Scalaz._
 
 
 object GenerateClassFiles {
@@ -83,6 +85,7 @@ object GenerateClassFiles {
       Option(lookUps.get(name))
   }
 
+  /** Writes the bytecode instructions for a method defined with the given Ast, and having said argument names. */
   private def writeMethodinstructions(argNames: Seq[String], defn: TypedAst, state: EvilMethodWriterState): Unit = {
     // First update evil state with method argument locations.
     for((arg, idx) <- argNames.zipWithIndex) {
@@ -95,48 +98,72 @@ object GenerateClassFiles {
     state.mv.visitMaxs(1, 1);
   }
 
+  //TODO - validate this doesn't suck at some point.
+  /** Encoding on the JVM of "ifs" method, a.k.a. IF statement. */
+  private def writeIfStatement(check: TypedAst, left: TypedAst, right: TypedAst, resultType: Type, state: EvilMethodWriterState): Unit = {
+    val fLabel = new Label()
+    val fEndLabel = new Label()
+    placeOnStack(check, state)
+    state.mv.visitJumpInsn(IFEQ, fLabel)
+    placeOnStack(left,state)
+    state.mv.visitJumpInsn(GOTO, fEndLabel)
+    state.mv.visitLabel(fLabel)
+    placeOnStack(right, state)
+    state.mv.visitLabel(fEndLabel)
+  }
+
+  /** Encoding on the JVM of the Plus method. */
+  def writePlusStatement(left: TypedAst, right: TypedAst, state: EvilMethodWriterState): Unit = {
+    placeOnStack(left, state)
+    placeOnStack(right, state)
+    state.mv.visitInsn(IADD)
+  }
+
+  def writePrintlnStatement(args: Seq[TypedAst], state: EvilMethodWriterState): Unit = {
+    // TODO - append all to a string, then print that.
+    // SUPER LAZY IMPL TIME.
+    import state.mv
+    def getSystemOut() = mv.visitFieldInsn(GETSTATIC,
+      "java/lang/System",
+      "out",
+      "Ljava/io/PrintStream;");
+    // TODO - Coerce args into strings
+    for(arg <- args) {
+      getSystemOut
+      placeOnStack(arg, state)
+      // TODO - look up the correct type, for now we only support Int.
+      mv.visitMethodInsn(INVOKEVIRTUAL,
+        "java/io/PrintStream",
+        "print",
+        "(I)V"
+      )
+    }
+    // Finally we just println
+    getSystemOut
+    mv.visitMethodInsn(INVOKEVIRTUAL,
+      "java/io/PrintStream",
+      "println",
+      "()V");
+  }
+
+  // Dumps the stack instructors to ge the value of a TypedAst pushed on to the stack.
   private def writeStackInstructions(defn: TypedAst, state: EvilMethodWriterState): Unit =
     defn match {
       // Literals are easiest for now...
       case i: LiteralTyped => placeOnStack(i, state)
       // Plus is hardcoded
-      case ApExprTyped(id, Seq(left, right), _) if id.name == "Plus" =>
-        placeOnStack(left, state)
-        placeOnStack(right, state)
-        state.mv.visitInsn(IADD)
-      // Never call id, just write the stack instructions for the nested expression.
+      case ApExprTyped(id, Seq(left, right), _) if id.name == "Plus" => writePlusStatement(left, right, state)
+      // IS is erased to the underyling expression.
       case ApExprTyped(i, Seq(id), _) if i.name == "IS" => writeStackInstructions(id, state)
+      // "if" hardcoded.
+      case ApExprTyped(i, Seq(check, left, right), tpe) if i.name == "ifs" => writeIfStatement(check, left, right, tpe, state)
       // Println is hardcoded
-      case ApExprTyped(id, args, _) if id.name == "PrintLn" =>
-        // SUPER LAZY IMPL TIME
-        import state.mv
-        def getSystemOut() = mv.visitFieldInsn(GETSTATIC,
-          "java/lang/System",
-          "out",
-          "Ljava/io/PrintStream;");
-        // TODO - Coerce args into strings
-        for(arg <- args) {
-          getSystemOut
-          placeOnStack(arg, state)
-          // TODO - look up the correct type, for now we only support Int.
-          mv.visitMethodInsn(INVOKEVIRTUAL,
-            "java/io/PrintStream",
-            "print",
-            "(I)V"
-          )
-        }
-        // TODO - string concat
-        // TODO - call printlns
-        // Finally we just println
-        getSystemOut
-        mv.visitMethodInsn(INVOKEVIRTUAL,
-          "java/io/PrintStream",
-          "println",
-          "()V");
-
-      // Application is not built in, we should create a method call here.
+      case ApExprTyped(id, args, _) if id.name == "PrintLn" => writePrintlnStatement(args, state)
+      // This method is not built in.  For now, we assume any non-built-in method is defined
+      // on the same classfile.
       case ApExprTyped(id, args, _) =>
-        // Now we should call the method
+        // Now we should call the method. TODO - we should check our information about the
+        // type of the method to see if it's a static method or other.
         args.foreach(arg => placeOnStack(arg, state))
         state.mv.visitMethodInsn(INVOKESTATIC,
           state.className,
@@ -144,9 +171,11 @@ object GenerateClassFiles {
           getFunctionSignature(id.tpe))
     }
 
+  // Injects the bytecode so the value returned by the given AST is pushed onto the stack.
   private def placeOnStack(ast: TypedAst, state: EvilMethodWriterState): Unit =
     ast match {
       case i: IntLiteralTyped => state.mv.visitLdcInsn(i.value)
+      case b: BoolLiteralTyped => state.mv.visitLdcInsn(b.value)
       // TODO - how to handle id references?
       case i: IdReferenceTyped =>
         state.getConstantLocation(i.name) match {
@@ -161,7 +190,10 @@ object GenerateClassFiles {
       case other => writeStackInstructions(other, state)
     }
 
+  // Injects the "load" instruction to pull a local at the given index, with the given type back
+  // onto the stack.
   def typeToLoadInstruction(mv: MethodVisitor, tpe: Type, idx: Int): Unit = tpe match {
+    case TypeSystem.Bool => mv.visitVarInsn(ILOAD, idx)
     case Integer => mv.visitVarInsn(ILOAD, idx)
     case _ =>
       // We assume everything else is an object.
@@ -183,10 +215,12 @@ object GenerateClassFiles {
           visitInternal(signature, arg)
           visitFunctionSignature(signature, result)
         case Integer => signature.visitReturnType().visitBaseType('I')
+        case TypeSystem.Bool => signature.visitReturnType().visitBaseType('Z')
         case Unit => signature.visitReturnType().visitBaseType('V')
       }
     def visitInternal(signature: SignatureWriter, tpe: Type): Unit = tpe match {
       case Integer => signature.visitBaseType('I')
+      case TypeSystem.Bool => signature.visitBaseType('Z')
       case Unit => signature.visitBaseType('V')
       // We don't really support passing functions yet.
       case f @ TypeSystem.Function(_, _) => signature.visitBaseType('A')

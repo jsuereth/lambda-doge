@@ -22,6 +22,9 @@ sealed abstract class Literal extends DogeAst
 case class IntLiteral(value: Int) extends Literal {
   override def toString = value.toString
 }
+case class BoolLiteral(value: Boolean) extends Literal {
+  override def toString = value.toString
+}
 case class IdReference(name: String) extends DogeAst {
   override def toString = s"<$name>"
 }

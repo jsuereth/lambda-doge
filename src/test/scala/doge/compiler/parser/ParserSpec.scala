@@ -11,6 +11,7 @@ class ParserSpec extends Specification { def is = s2"""
 
     The Parser should
       parse int literals                             $parseIntLiterals
+      parse bool literals                            $parseBoolLiterals
       parse identifiers                              $parseIdentifiers
       parse application                              $parseApplication
       parse let                                      $parseLet
@@ -20,14 +21,19 @@ class ParserSpec extends Specification { def is = s2"""
     "5" must parseAs(intLiteral, IntLiteral(5))
   }
 
+  def parseBoolLiterals = {
+    ("true" must parseAs(expr, BoolLiteral(true))) and
+      ("false" must parseAs(expr, BoolLiteral(false)))
+  }
+
   // TODO more rigorous testing.
   def parseIdentifiers = {
-    "id" must parseAs(idRef, IdReference("id"))
+    "id" must parseAs(expr, IdReference("id"))
   }
 
   def parseApplication = {
-    ("VERY Big Doge!" must parseAs(apExpr, ApExpr(IdReference("Big"), Seq(IdReference("Doge"))))) and
-    ("VERY Big 1!" must parseAs(apExpr, ApExpr(IdReference("Big"), Seq(IntLiteral(1)))))
+    ("VERY Big Doge!" must parseAs(expr, ApExpr(IdReference("Big"), Seq(IdReference("Doge"))))) and
+    ("VERY Big 1!" must parseAs(expr, ApExpr(IdReference("Big"), Seq(IntLiteral(1)))))
   }
 
   def parseLet = {

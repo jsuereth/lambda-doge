@@ -22,10 +22,21 @@ object Compiler {
       TypeSystem.newVariable
     )
   }
+
+  val ifType = {
+    val result = TypeSystem.newVariable
+    TypeSystem.FunctionN(
+      result,
+      TypeSystem.Bool,
+      result,
+      result
+    )
+  }
   val builtInTypes = TypeSystem.dumbEnvironment(Map(
     "Plus" -> TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer)),
     "IS" -> idType,
-    "PrintLn" -> printlnType
+    "PrintLn" -> printlnType,
+    "ifs" -> ifType
   ))
 
   /** A very simple example of compiling DOGE script. */

@@ -9,16 +9,22 @@ Doge
 MUCH IS 5!
 
 WOW
+Life
+MUCH IS true!
+
+WOW
 Katz
 VERY Big Doge!
 
 WOW
 Rain
-VERY Katz!
+VERY Big Katz!
 
 WOW
 main
 MUCH PrintLn
-VERY Big Doge!
+MUCH ifs Life
+  VERY Big Doge!
+  Rain!
 MUCH Rain!
 VERY Katz!!
