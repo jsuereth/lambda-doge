@@ -217,21 +217,62 @@ encode as:
 Not supported at this time
 
 
-### BuiltIn function calls
+### Standard Library
 
-    Plus :: Int => Int => Int
 
-encodes as IADD bytecode operation.
+The standard library supports several primitive functions currently:
 
+#### Raw
 
     IS :: a => a
 
 is erased completely (the argument expression is compiled directly inline).
 
+#### Booleans
 
-    ifs :: bool => a => a => a
+
+    ifs :: Boolean => a => a => a
+
+Encodes if statements. If the first argument is true, returns the second argument, otherwise returns the last argument.
+For evaluation semantics, the first/second argument are evaluated lazily.
+
+
+#### Integers
+
+    Plus :: Int => Int => Int
     
-is encoded as an if/else jump statement. which attempts to have lazy execute semantics.
+Adds two numbers together.
+
+
+    Minus:: Int => Int => Int
+    
+Minus two numbers together.
+
+    Multiply :: Int => Int => Int
+    
+Multiply two numbers together.
+
+    Divide :: Int => Int => Int
+    
+Divide two numbers together.
+
+
+##### Tuples
+
+    tuple2 :: a -> b -> (a,b)
+    
+Creates a tuple of the two values
+
+    fst :: (a,b) -> a
+    
+Returns the first part of a tuple
+
+    snd :: (a,b) -> b
+    
+Returns the second part of a tuple
+
+
+##### Lame hacks
 
 
     PrintLn :: Int => Int => Int => Int

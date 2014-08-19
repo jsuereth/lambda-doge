@@ -23,23 +23,14 @@ object Compiler {
     )
   }
 
-  val ifType = {
-    val result = TypeSystem.newVariable
-    TypeSystem.FunctionN(
-      result,
-      TypeSystem.Bool,
-      result,
-      result
-    )
-  }
+
   val builtInTypes = TypeSystem.dumbEnvironment(Map(
     "Plus" -> TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer)),
     "IS" -> idType,
-    "PrintLn" -> printlnType,
-    "ifs" -> ifType
+    "PrintLn" -> printlnType
   ) ++
     // TODO - Some better semantic here.
-    std.DogeTuple2.typeTable)
+    std.BuiltInType.all.typeTable)
 
   /** A very simple example of compiling DOGE script. */
   def compile(f: File): File = {

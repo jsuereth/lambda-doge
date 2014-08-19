@@ -1,6 +1,7 @@
 package doge.compiler
 package backend
 
+import doge.compiler.std.BuiltInType
 import org.objectweb.asm.Opcodes._
 import org.objectweb.asm._
 import doge.compiler.types._
@@ -112,11 +113,6 @@ object MethodWriter {
     state -> ()
   }
 
-  def iadd() = State[MethodWriterState, Unit] { state =>
-    state.mv.visitInsn(IADD)
-    state -> ()
-  }
-
   /** Places the result of an Ast expression onto the JVM stack.
     *
     * Note: This will either:
@@ -159,19 +155,17 @@ object MethodWriter {
   }
 
 
-  val builtIns = doge.compiler.std.DogeTuple2.backend
-
   type WrittenMethodState = State[MethodWriterState, Unit]
 
   /** Writes the stack instructions for a given AST. */
   def writeStackInstructions(ast: TypedAst): State[MethodWriterState, Unit] = {
-    builtIns.applyOrElse[TypedAst, WrittenMethodState](ast, {
+    // TODO - pull built-in-types from environment or something.
+    BuiltInType.all.backend.applyOrElse[TypedAst, WrittenMethodState](ast, {
       // First the simple expressions.
       case i: LiteralTyped => placeOnStack(i)
       // HERE we check for hardcoded methods.
-      case ApExprTyped(id, Seq(left, right), _) if id.name == "Plus" => builtInFunctions.plus(left, right)
+      // TODO - move these into builtins...
       case ApExprTyped(i, Seq(id), _) if i.name == "IS" => writeStackInstructions(id)
-      case ApExprTyped(i, Seq(check, left, right), tpe) if i.name == "ifs" => builtInFunctions.ifs(check, left, right, tpe)
       case ApExprTyped(id, args, _) if id.name == "PrintLn" => builtInFunctions.println(args)
 
 
@@ -197,13 +191,6 @@ object MethodWriter {
 
 
   object builtInFunctions {
-    /** Plus: int => int => int */
-    def plus(left: TypedAst, right: TypedAst): State[MethodWriterState, Unit] =
-      for {
-        _ <- placeOnStack(left)
-        _ <- placeOnStack(right)
-        _ <- iadd()
-      } yield ()
 
     /** Loads the stdout variable. */
     def stdout = getStatic("java/lang/System", "out", "Ljava/io/PrintStream;")
@@ -232,20 +219,7 @@ object MethodWriter {
           state -> ()
         }
       }
-    /** Encoding on the JVM of "ifs" method, a.k.a. IF statement. */
-    def ifs(check: TypedAst, left: TypedAst, right: TypedAst, resultType: Type): State[MethodWriterState, Unit] = {
-      val fLabel = new Label()
-      val fEndLabel = new Label()
-      for {
-        _ <- placeOnStack(check)
-        _ <- jumpIfEq(fLabel)
-        _ <- placeOnStack(left)
-        _ <- goto(fEndLabel)
-        _ <- writeLabel(fLabel)
-        _ <- placeOnStack(right)
-        _ <- writeLabel(fEndLabel)
-      } yield ()
-    }
+
   }
 
   /** writes a method definition using the given state, returning the last expression result. */
@@ -357,29 +331,28 @@ object GenerateClassFiles {
       f match {
         case Function(arg, next @ Function(_,_)) =>
           signature.visitParameterType()
-          visitInternal(signature, arg)
+          visitSignatureInternal(signature, arg)
           visitFunctionSignature(signature, next)
         case Function(arg, result) =>
           signature.visitParameterType()
-          visitInternal(signature, arg)
+          visitSignatureInternal(signature, arg)
           visitFunctionSignature(signature, result)
         // TODO _ Everything else is assumed to be an object
-        case other => visitInternal(signature.visitReturnType, other)
+        case other => visitSignatureInternal(signature.visitReturnType, other)
       }
-    def visitInternal(signature: SignatureVisitor, tpe: Type): Unit = tpe match {
-      case Integer => signature.visitBaseType('I')
-      case TypeSystem.Bool => signature.visitBaseType('Z')
-      case Unit => signature.visitBaseType('V')
-      // TODO - We don't really support passing functions yet.
-      case f @ TypeSystem.Function(_, _) => signature.visitClassType("java/lang/Object;")
-      // TODO - Don't hardcode the object string everywhere.
-      // TODO - This bit should come from the Tuple2 built-in hook.
-      case TypeConstructor("Tuple2", _) => signature.visitArrayType().visitClassType("java/lang/Object;")
-      case _ => sys.error(s"Unsupported type: $tpe")
-
-    }
     visitFunctionSignature(signature, tpe)
     signature.toString
   }
+
+  private[backend] def visitSignatureInternal(signature: SignatureVisitor, tpe: Type): Unit =
+    BuiltInType.all.visitSignatureInternal.applyOrElse[(SignatureVisitor, Type), Unit]((signature, tpe), {
+      case (sv, Unit) => signature.visitBaseType('V')
+      // TODO - We don't really support passing functions yet.
+      case (sv, f @ TypeSystem.Function(_, _)) => signature.visitClassType("java/lang/Object;")
+      // TODO - Don't hardcode the object string everywhere.
+      // TODO - This bit should come from the Tuple2 built-in hook.
+      case (sv, TypeConstructor("Tuple2", _)) => signature.visitArrayType().visitClassType("java/lang/Object;")
+      case _ => sys.error(s"Unsupported type: $tpe")
+    })
 
 }

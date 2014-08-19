@@ -4,46 +4,53 @@ package std
 
 import org.objectweb.asm.Opcodes._
 import doge.compiler.types.{IdReferenceTyped, ApExprTyped, TypedAst}
+import org.objectweb.asm.signature.SignatureVisitor
 import types.TypeSystem._
 import backend._
 import scalaz._
 import Scalaz._
 
-trait BuiltInType {
-  // TODO - figure out how to handle terms and java scoping...
-  def name: String
-  def typeTable: Map[String, Type]
-  def backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]]
-
-  // TODO - Mapping for JDK type signatures + hook into getFunctionSignature(function: Type)
-}
 
 
 /** Built in Tuple2 types/namespace. */
 object DogeTuple2 extends BuiltInType {
+
+  // Actual names in the language
+  val FIRST = "fst"
+  val SECOND = "snd"
+  val CONSTRUCTOR = "tuple2"
+  // The name of the type.
   val name = "Tuple2"
+
+  // Typing table, for running typer.
   val typeTable = Map[String, Type](
-    "fst" -> {
+    FIRST-> {
       val a = newVariable
       val b = newVariable
-      Function(TypeConstructor("Tuple2", Seq(a, b)), a)
+      Function(TypeConstructor(name, Seq(a, b)), a)
     },
-    "snd" -> {
+    SECOND -> {
       val a = newVariable
       val b = newVariable
-      Function(TypeConstructor("Tuple2", Seq(a, b)), b)
+      Function(TypeConstructor(name, Seq(a, b)), b)
     },
-    "tuple2" -> {
+    CONSTRUCTOR -> {
       val a = newVariable
       val b = newVariable
-      FunctionN(TypeConstructor("Tuple2", Seq(a, b)), a, b)
+      FunctionN(TypeConstructor(name, Seq(a, b)), a, b)
     }
   )
 
+  val visitSignatureInternal: PartialFunction[(SignatureVisitor, Type), Unit] = {
+    case (sv, TypeConstructor(name, Seq(arg1, arg2))) =>
+        sv.visitArrayType().visitClassType("java/lang/Object;")
+  }
+
+  // Actual implementation of the methods exposed.
   val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
-    case ApExprTyped(IdReferenceTyped("tuple2", _), Seq(left, right), tpe) => constructorImpl(left, right)
-    case ApExprTyped(IdReferenceTyped("fst", _), Seq(tuple), tpe) => fstMethodImpl(tuple)
-    case ApExprTyped(IdReferenceTyped("snd", _), Seq(tuple), tpe) => fstMethodImpl(tuple)
+    case ApExprTyped(IdReferenceTyped(CONSTRUCTOR, _), Seq(left, right), tpe) => constructorImpl(left, right)
+    case ApExprTyped(IdReferenceTyped(FIRST, _), Seq(tuple), tpe) => fstMethodImpl(tuple)
+    case ApExprTyped(IdReferenceTyped(SECOND, _), Seq(tuple), tpe) => fstMethodImpl(tuple)
   }
 
   private def fstMethodImpl(tuple: TypedAst): State[MethodWriterState, Unit] = {
@@ -69,13 +76,13 @@ object DogeTuple2 extends BuiltInType {
 
   private def fstTupleType(tpe: Type): Type =
     tpe match {
-      case TypeConstructor("Tuple2", Seq(left, right)) => left
-      case _ => sys.error(s"$tpe is not a tuple!")
+      case TypeConstructor(name, Seq(left, right)) => left
+      case _ => sys.error(s"$tpe is not a $name!")
     }
   private def sndTupleType(tpe: Type): Type =
     tpe match {
-      case TypeConstructor("Tuple2", Seq(left, right)) => right
-      case _ => sys.error(s"$tpe is not a tuple!")
+      case TypeConstructor(name, Seq(left, right)) => right
+      case _ => sys.error(s"$tpe is not a $name!")
     }
 
   private def constructorImpl(left: TypedAst, right: TypedAst): State[MethodWriterState, Unit] = {
