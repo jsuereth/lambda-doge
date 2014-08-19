@@ -37,7 +37,9 @@ object Compiler {
     "IS" -> idType,
     "PrintLn" -> printlnType,
     "ifs" -> ifType
-  ))
+  ) ++
+    // TODO - Some better semantic here.
+    std.DogeTuple2.typeTable)
 
   /** A very simple example of compiling DOGE script. */
   def compile(f: File): File = {

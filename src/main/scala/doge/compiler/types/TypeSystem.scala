@@ -55,6 +55,13 @@ object TypeSystem {
    * A type operator, i.e. One which applies a type function with types.
    *
    * Simple types are considered operators with no arguments.
+   *
+   * In terms of kind, it's based on the # of arguments remaining that are type variables
+   *    0 -  *
+   *    1 - * -> *
+   *    2 - * -> * -> *
+   *    etc.
+   * EXCEPT, we can't really implement an effective kind system in this fashion.
    */
   case class TypeConstructor(name: String, args: Seq[Type]) extends Type {
     override def isMonotype: Boolean =
@@ -63,6 +70,7 @@ object TypeSystem {
 
     override def toString =
       if(args.isEmpty) s"$name"
+      else if(name == "Tuple2") s"(${args(0)}, ${args(1)})"
       else if(args.length == 2) s"${args(0)} $name ${args(1)}"
       else s"($name ${args.mkString(" ")})"
   }
@@ -87,7 +95,10 @@ object TypeSystem {
   // Helpers to generate unique variables
   private[this] val _nextVariableId = new java.util.concurrent.atomic.AtomicLong(0)
 
-  // Generates a new variable type.
+  // Generates a new variable type.  While this mutates a global id field, it's
+  // meant to be referentially transparent, in creating a unique type variable that
+  // is not the same as another.  The id itself should not matter for
+  // correct execution.
   def newVariable: TypeVariable = TypeVariable(_nextVariableId.getAndIncrement)
 
 

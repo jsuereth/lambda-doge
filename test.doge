@@ -10,7 +10,7 @@ MUCH IS 5!
 
 WOW
 Life
-MUCH IS true!
+MUCH IS false!
 
 WOW
 Katz
@@ -21,10 +21,19 @@ Rain
 VERY Big Katz!
 
 WOW
+zoo
+VERY tuple2 Katz Rain!
+
+WOW
+foo
+VERY fst zoo!
+
+
+WOW
 main
 MUCH PrintLn
 MUCH ifs Life
   VERY Big Doge!
   Rain!
 MUCH Rain!
-VERY Katz!!
+VERY foo!!
