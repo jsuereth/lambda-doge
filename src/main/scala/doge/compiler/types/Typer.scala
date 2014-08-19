@@ -2,6 +2,7 @@ package doge.compiler.types
 
 import scala.util.parsing.input.Position
 import TypeSystem._
+import Typer.Substitutions
 import doge.compiler.ast._
 import scalaz._
 import Scalaz._
@@ -16,7 +17,7 @@ case class SyntaxTypeError(pos: Position, msg: String) extends Exception(
   */
 case class TyperEnvironment(
   env: Env,
-  refinements: Refinements
+  substitutions: Substitutions
 )
 object TyperEnvironment {
   type TyperState[A] = State[TyperEnvironment, A]
@@ -24,15 +25,15 @@ object TyperEnvironment {
   /** Grabs the current type environment (scope) for the typer. */
   def env: TyperState[Env] = State[TyperEnvironment, Env] { state => state -> state.env }
   /** Grabs the current known variable refinements in the current typer run. */
-  def refinements: TyperState[Refinements] = State[TyperEnvironment, Refinements] { state => state -> state.refinements }
+  def substitutions: TyperState[Substitutions] = State[TyperEnvironment, Substitutions] { state => state -> state.substitutions }
   /** Adds term->type associations to the environment in this typer. */
   def addEnvironment(types: (String, Type)*): TyperState[Unit] = State[TyperEnvironment, Unit] {
     case x: TyperEnvironment =>
       x.copy(env = x.env.withAdded(types:_*)) -> ()
   }
   /** Adds refinements (type-variable => type) to the typer state in this environment. */
-  def addRefinements(refines: Refinements): TyperState[Unit] = State[TyperEnvironment, Unit] { state =>
-    (state.copy(refinements = state.refinements ++ refines), ())
+  def addSubstitutions(refines: Substitutions): TyperState[Unit] = State[TyperEnvironment, Unit] { state =>
+    (state.copy(substitutions = state.substitutions ++ refines), ())
   }
   // TODO - causes scala compiler crash, but not needed so far.
   //def clearRefinements: TyperState[Unit] = State[TyperEnvironment, Unit](x => x.copy(refinements = Map.empty) -> ())
@@ -40,19 +41,24 @@ object TyperEnvironment {
   /** Places some value inside the TyperState Monad, allowing future computations to lookup
     * values in the state.
     */
-  def withState[A](a: A): TyperState[A] = State[TyperEnvironment, A]({ s => (s,a)})
+  def withState[A](a: A): TyperState[A] = state[TyperEnvironment, A](a)
 }
 /**
  * A typer/inferencer for the Doge language.
  */
 object Typer {
   import TyperEnvironment._
+  type Substitutions = Map[Long, Type]
 
   // Note:  Use typeAst for stateful version.
   // This starts with state set to the passed in environment.
   def typeTree(ast: DogeAst, env: Env): TypedAst = {
-    //typeTree(ast, env, Set.empty)
-    val (state, result) = typeAst(ast)(TyperEnvironment(env, Map.empty))
+    val typerRun =
+      for {
+        ast <- typeAst(ast)
+        cleaned <- pruneAst(ast)
+      } yield cleaned
+    val (_, result) = typerRun(TyperEnvironment(env, Map.empty))
     result
   }
 
@@ -81,16 +87,6 @@ object Typer {
       e <- env
     } yield IdReferenceTyped(id.name, e.lookup(id.name))
 
-  /** Helper method which will unify two types AND preserver
-    * any discovered refinements inside the typer state.
-    */
-  private def preservingUnify(t: Type, t2: Type): TyperState[Type] = {
-    val (result, newRefines) = unify(t, t2)
-    for {
-      _ <- addRefinements(newRefines)
-    } yield result
-  }
-
   /** Creates a new function type which is a curried
     * application of all types in the argument AST and a
     * variable result type, used for inference/typechecking of result type.
@@ -102,13 +98,6 @@ object Typer {
     }
   }
 
-  /** Will prune type variables out of a type, using the
-    * refinements associated with the current state.
-    */
-  private def statedRecursivePrune(t: Type): TyperState[Type] =
-    for {
-      r <- refinements
-    } yield recursivePrune(t, r)
 
   /**
    * Will type a lambda-application tree.
@@ -118,7 +107,7 @@ object Typer {
       apExpr <- withState(ref)
       funTree <- typeIdReference(apExpr.name)
       argTypes <- apExpr.args.toList.traverse(typeAst)
-      result <- preservingUnify(makeFuncForRefinement(argTypes), funTree.tpe)
+      result <- unify(makeFuncForRefinement(argTypes), funTree.tpe)
     } yield {
       // Rip result type out of unified type:
       val resultType = argTypes.foldLeft(result) {
@@ -155,29 +144,30 @@ object Typer {
       for {
         _ <- addEnvironment(argToType.toSeq:_*)
         resultAst <- typeAst(ref.definition)
-        // Here, after doing "global let inference" we prune all type variables out of the tree.
-        ast <- pruneAst(LetExprTyped(ref.name, ref.argNames, resultAst, makeFuncType(resultAst.tpe)))
-      } yield ast
+      } yield LetExprTyped(ref.name, ref.argNames, resultAst, makeFuncType(resultAst.tpe))
     }
   }
 
-  /** Prunes type variables out of the ast using the typer state. */
+  /** Prunes type variables out of the ast using the typer state.
+    *
+    * NOTE: any time we recurse down like this, we're taking a perf hit.
+    */
   private def pruneAst(ast: TypedAst): TyperState[TypedAst] = {
     def pruneRef(id: IdReferenceTyped): TyperState[IdReferenceTyped] = {
       for {
-        tpe <- statedRecursivePrune(id.tpe)
+        tpe <- recursivePrune(id.tpe)
       } yield IdReferenceTyped(id.name, tpe)
     }
     def pruneAp(ap: ApExprTyped): TyperState[ApExprTyped] = {
       for {
-        tpe <- statedRecursivePrune(ap.tpe)
+        tpe <- recursivePrune(ap.tpe)
         args <- ap.args.toList.traverse(pruneAst)
         name <- pruneRef(ap.name)
       } yield ApExprTyped(name, args, tpe)
     }
     def pruneLet(l: LetExprTyped): TyperState[LetExprTyped] = {
       for {
-        tpe <- statedRecursivePrune(l.tpe)
+        tpe <- recursivePrune(l.tpe)
         defn <- pruneAst(l.definition)
       } yield LetExprTyped(l.name, l.argNames, defn, tpe)
 
@@ -189,4 +179,88 @@ object Typer {
       case l: LiteralTyped => withState(l)
     }
   }
+
+  /** Recursively replaces type variables with substitutions, following more than one chain if needed. */
+  def prune(t: Type): TyperState[Type] =
+    for {
+      r <- substitutions
+      result <- (t match {
+        case v: TypeVariable if r.contains(v.id) => prune(r(v.id))
+        case _ => withState(t)
+      })
+    } yield result
+
+  /** Recursively descends a type, replacing type variables with substitutions. */
+  def recursivePrune(t: Type): TyperState[Type] =
+    t match {
+      case TypeConstructor(name, args) =>
+        for {
+          targs <- args.toList.traverse[TyperState, Type](recursivePrune)
+        } yield TypeConstructor(name, targs)
+      case x => prune(t)
+    }
+
+
+  /** Fundamental unit of type infernce:
+    *
+    * Attempts to unify two types, such that any variables in t1 or t2 are replaced with known types in
+    * the other.  Returns the resulting type.
+    *
+    * Throws a TypeError if unable to unify types due to a type checking conflict.
+    * @param t1
+    * @param t2
+    * @return
+    */
+  def unify(t1: Type, t2: Type): TyperState[Type] = {
+    /** A method which marks a type variable as being replacable with another type.
+      *
+      * This modifies the "state" of the typer, such that for the rest of this session,
+      * anytime the variable `v` is seen, it can be typechecked as if `t` was seen.
+      */
+    def substitute(v: TypeVariable, t: Type) = State[TyperEnvironment, Type] { state =>
+      if(v != t) {
+        state.copy(substitutions = state.substitutions + (v.id -> t)) -> t
+      } else state -> t
+    }
+    for {
+      pt1 <- prune(t1)
+      pt2 <- prune(t2)
+      result <- (pt1, pt2) match {
+        // Detected two type variables as equivalent.
+        case (a: TypeVariable, b: TypeVariable) =>
+          if (a.id < b.id) substitute(b, a)
+          else substitute(a, b)
+        // Detected that type variable a can use b's value.
+        case (a: TypeVariable, b) =>
+          if (a != b) {
+            if (occursIn(a, b)) throw TypeError(s"recursive unification of $a and $b")
+            // Everywhere A shows up we need to replace with B.
+            substitute(a, b)
+          } else withState(a)
+        // Detect a type variable to unify with a constructor, so we invert the relationship and delegate.
+        case (a: TypeConstructor, b: TypeVariable) => unify(b, a)
+        // Fundamental type-check operation.  We don't support polymorphism, type/term names need to
+        // be exact, including for all args.
+        case (a: TypeConstructor, b: TypeConstructor) =>
+          if (a.name != b.name || a.args.length != b.args.length) throw TypeError(s"Type mismatch: $a != $b")
+          // If all the args are the same, then we are the same type.
+          for {
+            targs <- a.args.zip(b.args).toList.traverse[TyperState, Type]({ case (l,r) => unify(l,r)})
+          } yield TypeConstructor(a.name, targs)
+      }
+    } yield result
+  }
+
+  /** Returns true if a given type variable returns inside the other set of types. */
+  private def occursIn(v: TypeVariable, tpe: Type): Boolean = {
+    tpe match {
+      case `v` => true
+      case TypeConstructor(name, args) => occursIn(v, args)
+      case _ => false
+    }
+  }
+
+  /** Returns true if a given type variable occurs inside the list of types. */
+  private def occursIn(t: TypeVariable, list: Seq[Type]): Boolean =
+    list exists (t2 => occursIn(t, t2))
 }

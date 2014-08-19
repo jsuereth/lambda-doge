@@ -38,7 +38,7 @@ class TyperSpec extends Specification { def is = s2"""
   def unifyApplication =
      ApExpr(IdReference("plus"), Seq(ApExpr(IdReference("is"), Seq(IntLiteral(1))))) must
        typeAs(ApExprTyped(name = IdReferenceTyped("plus", plusType),
-                         args = Seq(ApExprTyped(IdReferenceTyped("is", isType), Seq(IntLiteralTyped(1)), Integer)),
+                         args = Seq(ApExprTyped(IdReferenceTyped("is", Function(Integer, Integer)), Seq(IntLiteralTyped(1)), Integer)),
                          tpe = Function(Integer, Integer)))
 
 
