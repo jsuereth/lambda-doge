@@ -23,7 +23,7 @@ object DogeTuple2 extends BuiltInType {
   val name = "Tuple2"
 
   // Typing table, for running typer.
-  val typeTable = Map[String, Type](
+  override val typeTable = Map[String, Type](
     FIRST-> {
       val a = newVariable
       val b = newVariable
@@ -41,13 +41,13 @@ object DogeTuple2 extends BuiltInType {
     }
   )
 
-  val visitSignatureInternal: PartialFunction[(SignatureVisitor, Type), Unit] = {
+  override val visitSignatureInternal: PartialFunction[(SignatureVisitor, Type), Unit] = {
     case (sv, TypeConstructor(name, Seq(arg1, arg2))) =>
         sv.visitArrayType().visitClassType("java/lang/Object;")
   }
 
   // Actual implementation of the methods exposed.
-  val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
+  override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
     case ApExprTyped(IdReferenceTyped(CONSTRUCTOR, _), Seq(left, right), tpe) => constructorImpl(left, right)
     case ApExprTyped(IdReferenceTyped(FIRST, _), Seq(tuple), tpe) => fstMethodImpl(tuple)
     case ApExprTyped(IdReferenceTyped(SECOND, _), Seq(tuple), tpe) => fstMethodImpl(tuple)

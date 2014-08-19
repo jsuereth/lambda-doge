@@ -19,7 +19,7 @@ object Integers extends BuiltInType {
   val MUL = "Multiply"
   val DIV = "Divide"
 
-  def typeTable: Map[String, Type] =
+  override val typeTable: Map[String, Type] =
     Map(
       PLUS -> TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer)),
       MINUS -> TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer)),
@@ -27,14 +27,14 @@ object Integers extends BuiltInType {
       DIV -> TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer))
     )
 
-  def backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
+  override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
     case ApExprTyped(id, Seq(left, right), _) if id.name == "Plus" => plus(left, right)
     case ApExprTyped(id, Seq(left, right), _) if id.name == "Minus" => minus(left, right)
     case ApExprTyped(id, Seq(left, right), _) if id.name == "Multiply" => mult(left, right)
     case ApExprTyped(id, Seq(left, right), _) if id.name == "Divide" => divide(left, right)
   }
 
-  def visitSignatureInternal: PartialFunction[(SignatureVisitor, Type), Unit] = {
+  override val visitSignatureInternal: PartialFunction[(SignatureVisitor, Type), Unit] = {
     case (sv, TypeSystem.Integer) => sv.visitBaseType('I')
   }
 

@@ -11,10 +11,9 @@ import scalaz._
 
 trait BuiltInType {
   // TODO - figure out how to import these rather than always included.
-  def typeTable: Map[String, Type]
-  def backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]]
-
-  def visitSignatureInternal: PartialFunction[(SignatureVisitor, Type), Unit]
+  def typeTable: Map[String, Type] = Map.empty
+  def backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = PartialFunction.empty
+  def visitSignatureInternal: PartialFunction[(SignatureVisitor, Type), Unit] = PartialFunction.empty
 
   // TODO - Mapping for JDK type signatures + hook into getFunctionSignature(function: Type)
 }
@@ -26,5 +25,5 @@ object BuiltInType {
   }
 
   // FOR now, all built-in-support is right here.
-  def all = Seq(DogeTuple2, Integers, Booleans).reduce(join)
+  def all = Seq(DogeTuple2, Integers, Booleans, Lists).reduce(join)
 }

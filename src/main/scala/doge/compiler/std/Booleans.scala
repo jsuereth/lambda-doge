@@ -29,13 +29,13 @@ object Booleans extends BuiltInType {
     )
   }
 
-  def typeTable: Map[String, Type] =
+  override val typeTable: Map[String, Type] =
     Map(
       IF -> ifType
     )
 
 
-  val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
+  override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
     case ApExprTyped(i, Seq(check, left, right), tpe) if i.name == IF => ifs(check, left, right, tpe)
   }
 

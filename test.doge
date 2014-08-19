@@ -30,6 +30,15 @@ VERY fst zoo!
 
 
 WOW
+lists
+VERY Nil!
+
+WOW
+biglists
+VERY cons Katz
+VERY cons foo lists!!
+
+WOW
 main
 MUCH PrintLn
 MUCH ifs Life
