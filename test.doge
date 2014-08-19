@@ -39,6 +39,14 @@ VERY cons Katz
 VERY cons foo lists!!
 
 WOW
+smalllists
+VERY tl biglists!
+
+WOW
+headlists
+VERY hd biglists!
+
+WOW
 main
 MUCH PrintLn
 MUCH ifs Life

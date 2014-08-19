@@ -73,6 +73,7 @@ object Lists extends BuiltInType {
         mv.visitInsn(ICONST_0)
         mv.visitMethodInsn(INVOKEINTERFACE, "java/util/List", "get", "(I)Ljava/lang/Object;")
       }
+      _ <- unbox(listElementType(list.tpe))
     } yield ()
   }
   private def writeTail(list: TypedAst): State[MethodWriterState, Unit] = {
@@ -81,7 +82,9 @@ object Lists extends BuiltInType {
       _ <- dupe
       _ <- rawInsn { mv =>
         mv.visitInsn(ICONST_0)
-        mv.visitMethodInsn(INVOKEINTERFACE, "java/util/List", "remove", "(I)Z")
+        mv.visitMethodInsn(INVOKEINTERFACE, "java/util/List", "remove", "(I)Ljava/lang/Object;")
+        // ignore the boolean return
+        mv.visitInsn(POP)
       }
     } yield ()
   }
@@ -90,4 +93,10 @@ object Lists extends BuiltInType {
       // TODO - figure out generics
       sv.visitClassType("java/util/List;")
   }
+
+  private def listElementType(tpe: Type): Type =
+    tpe match {
+      case TypeConstructor("List", Seq(el)) => el
+      case _ => sys.error(s"$tpe is not a valid list type.")
+    }
 }

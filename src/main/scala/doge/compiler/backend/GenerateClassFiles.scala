@@ -40,6 +40,7 @@ object MethodWriter {
   }
 
   val dupe = rawInsn(_.visitInsn(DUP))
+  val pop = rawInsn(_.visitInsn(POP))
 
 
   // DUMB boxing (lazy as possible)
