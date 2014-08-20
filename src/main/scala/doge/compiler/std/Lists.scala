@@ -36,8 +36,8 @@ object Lists extends BuiltInType {
   )
 
   override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
-    case ApExprTyped(i, _, tpe) if i.name == NIL => writeNil
-    case IdReferenceTyped(NIL, tpe)  => writeNil
+    case ApExprTyped(i, _, _) if i.name == NIL => writeNil
+    case IdReferenceTyped(NIL, _)  => writeNil
     case ApExprTyped(i, Seq(front, lstExpr), tpe) if i.name == CONS => writeCons(front, lstExpr)
     case ApExprTyped(i, Seq(lstExpr), tpe) if i.name == HEAD => writeHead(lstExpr)
     case ApExprTyped(i, Seq(lstExpr), tpe) if i.name == TAIL => writeTail(lstExpr)
@@ -46,10 +46,7 @@ object Lists extends BuiltInType {
   import doge.compiler.backend.MethodWriter._
 
   private val writeNil = State[MethodWriterState, Unit] { state =>
-    // TODO - write out an empty array list or something
-    // 0:	new	#6; //class java/util/concurrent/CopyOnWriteArrayList
-    // 3:	dup
-    // 4:	invokespecial	#7; //Method java/util/concurrent/CopyOnWriteArrayList."<init>":()V
+    // TODO - Re-use the same instance rather than copying...
     state.mv.visitTypeInsn(NEW, "java/util/concurrent/CopyOnWriteArrayList")
     state.mv.visitInsn(DUP)
     state.mv.visitMethodInsn(INVOKESPECIAL, "java/util/concurrent/CopyOnWriteArrayList", "<init>", "()V")

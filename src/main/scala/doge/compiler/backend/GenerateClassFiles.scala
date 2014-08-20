@@ -124,11 +124,17 @@ object MethodWriter {
     * @param ast
     * @return
     */
-  def placeOnStack(ast: TypedAst): State[MethodWriterState, Unit] = {
-    ast match {
+  def placeOnStack(ast: TypedAst): State[MethodWriterState, Unit] = BuiltInType.all.backend.applyOrElse[TypedAst, State[MethodWriterState, Unit]](ast, {
       case i: IntLiteralTyped => loadConstant(new java.lang.Integer(i.value))
       case b: BoolLiteralTyped => loadConstant(new java.lang.Boolean(b.value))
       // TODO - how to handle id references?
+      // TODO - move these into builtins...
+      case ApExprTyped(i, Seq(id), _) if i.name == "IS" => placeOnStack(id)
+      case ApExprTyped(id, args, _) if id.name == "PrintLn" => builtInFunctions.println(args)
+      // This method is not built in.  For now, we assume any non-built-in method is defined
+      // on the same classfile.
+      // TODO - Handle non-local methods
+      case ap @ ApExprTyped(id, args, _) => applyFunction(id, args)
       case i: IdReferenceTyped =>
         for {
           idx <- localVarIndex(i.name)
@@ -140,10 +146,8 @@ object MethodWriter {
               callStaticLocalMethod(i.name, i.tpe)
           }
         } yield ()
-      case other =>
-        writeStackInstructions(other)
-    }
-  }
+
+  })
 
   /** calls a function with a given reference and set of arguments. */
   def applyFunction(i: IdReferenceTyped, args: Seq[TypedAst]): State[MethodWriterState, Unit] = {
@@ -157,25 +161,6 @@ object MethodWriter {
 
 
   type WrittenMethodState = State[MethodWriterState, Unit]
-
-  /** Writes the stack instructions for a given AST. */
-  def writeStackInstructions(ast: TypedAst): State[MethodWriterState, Unit] = {
-    // TODO - pull built-in-types from environment or something.
-    BuiltInType.all.backend.applyOrElse[TypedAst, WrittenMethodState](ast, {
-      // First the simple expressions.
-      case i: LiteralTyped => placeOnStack(i)
-      // HERE we check for hardcoded methods.
-      // TODO - move these into builtins...
-      case ApExprTyped(i, Seq(id), _) if i.name == "IS" => writeStackInstructions(id)
-      case ApExprTyped(id, args, _) if id.name == "PrintLn" => builtInFunctions.println(args)
-
-
-      // This method is not built in.  For now, we assume any non-built-in method is defined
-      // on the same classfile.
-      // TODO - Handle non-local methods
-      case ap @ ApExprTyped(id, args, _) => applyFunction(id, args)
-    })
-  }
 
 
   /** TOOD - Unifiy with however Java types are exposed in the typesystem */
@@ -225,7 +210,7 @@ object MethodWriter {
 
   /** writes a method definition using the given state, returning the last expression result. */
   def writeMethod(defn: TypedAst): State[MethodWriterState, Unit] = {
-    writeStackInstructions(defn).flatMap { _ =>
+    placeOnStack(defn).flatMap { _ =>
       State[MethodWriterState, Unit] { state =>
         // TODO - This should return the result of the expression type, not just integer always.
         defn.tpe match {
