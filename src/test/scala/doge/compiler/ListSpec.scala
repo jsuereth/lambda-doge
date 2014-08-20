@@ -26,7 +26,8 @@ object ListSpec extends FullCompilerSpec {
      """WOW
        |list
        |MUCH cons 2
-       |VERY cons 1 Nil!!
+       |VERY cons 1
+       |Nil!!
        |
        |WOW
        |test

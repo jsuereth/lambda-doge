@@ -21,7 +21,13 @@ class TyperSpec extends Specification { def is = s2"""
       type  references                               $typeReferences
       unfiy application types                        $unifyApplication
       unify let types                                $unifyLet
+      prevent different types in lists               $listError
                                                         """
+
+
+  def listError = {
+    ApExpr(IdReference("cons"), Seq(IntLiteral(1), BoolLiteral(true))) must not(typeCheck)
+  }
 
   def typeBooleanLiterals = {
     BoolLiteral(false) must typeAs(BoolLiteralTyped(false))
@@ -56,6 +62,20 @@ class TyperSpec extends Specification { def is = s2"""
           tpe = Function(Integer, Integer)
         )
      )
+
+
+  def typeCheck: Matcher[DogeAst] = new Matcher[DogeAst] {
+    def apply[S <: DogeAst](tree: Expectable[S]) = {
+      try {
+        Typer.typeTree(tree.value, defaultTypeEnv)
+        // TODO - Compare types maybe needs to ignore variables....
+        success("", tree)
+      }
+      catch {
+        case t: TypeError => failure(s"Expected $tree got error: $t", tree)
+      }
+    }
+  }
 
   def typeAs(value: TypedAst): Matcher[DogeAst] = new Matcher[DogeAst] {
     def apply[S <: DogeAst](tree: Expectable[S]) = {
