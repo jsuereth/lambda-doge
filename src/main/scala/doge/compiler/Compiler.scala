@@ -4,7 +4,7 @@ import java.io.File
 
 import doge.compiler.ast.{LetExpr, DogeAst}
 import doge.compiler.backend.GenerateClassFiles
-import doge.compiler.types.{Typer, TypedAst, LetExprTyped, TypeSystem}
+import doge.compiler.types._
 
 object Compiler {
   // Built in types
@@ -42,17 +42,9 @@ object Compiler {
   }
 
   def compile(input: String, classDirectory: File, name: String): File = {
-    System.err.println(" -- Compiling --")
-    System.err.println(input)
     val parsed = parser.DogeParser.parseProgram(input)
-    System.err.println(" -- Parsed -- ")
-    System.err.println(parsed.mkString("\n"))
     val typed = typeWithGlobalLet(parsed).collect({ case l: LetExprTyped => l })
-    System.err.println(" -- Typed -- ")
-    System.err.println(typed.mkString("\n"))
     val clsFile = GenerateClassFiles.makeClassfile(typed, classDirectory, name)
-    System.err.println(" -- Compiled -- ")
-    System.err.println(clsFile.getAbsolutePath)
     clsFile
   }
 
@@ -78,7 +70,18 @@ object Compiler {
   }
 
   def main(args: Array[String]): Unit = {
-    args.map(n => new File(n)).foreach(compile)
+   /* def errorCarrot(pos: Position): String = {
+      import pos._
+      lineContents.take(column - 1).map { x => if (x == '\t') x else ' '} + "^"
+    }*/
+    for(arg <- args) {
+      val f = new File(arg)
+      try compile(f)
+      catch {
+        case ste: SyntaxTypeError  =>
+          System.err.println(s"[ERROR] ${arg}@${ste.pos.line}:${ste.pos.column} - ${ste.msg}\n${ste.pos.longString}")
+      }
+    }
   }
 
 }

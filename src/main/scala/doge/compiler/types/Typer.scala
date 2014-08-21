@@ -8,7 +8,7 @@ import scalaz._
 import Scalaz._
 
 case class SyntaxTypeError(pos: Position, msg: String) extends Exception(
-  s"\n${pos.longString} $msg"
+  s"$msg at\n${pos.longString}"
 )
 
 /** The state through which we thread the typer.
@@ -243,6 +243,7 @@ object Typer {
         // Fundamental type-check operation.  We don't support polymorphism, type/term names need to
         // be exact, including for all args.
         case (a: TypeConstructor, b: TypeConstructor) =>
+          // TODO - We should attempt to give a better error message here.
           if (a.name != b.name || a.args.length != b.args.length) throw SyntaxTypeError(pos, s"Type mismatch: $a != $b")
           // If all the args are the same, then we are the same type.
           for {

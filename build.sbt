@@ -1,3 +1,5 @@
+import NativePackagerKeys._
+
 scalaVersion := "2.11.1"
 
 libraryDependencies ++= Seq(
@@ -8,3 +10,12 @@ libraryDependencies ++= Seq(
 
 scalacOptions in Test ++= Seq("-Yrangepos")
 
+packageArchetype.java_application
+
+mainClass in Compile := Some("doge.compiler.Compiler")
+
+name := "dogec"
+
+organization := "com.jsuereth.doge"
+
+version := "0.1"

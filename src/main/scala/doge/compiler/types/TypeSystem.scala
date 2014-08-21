@@ -37,6 +37,8 @@ object TypeSystem {
     }
   }
 
+  // TODO - We need a way to pickle types in/out for modules...
+
   /** Base class for all types in this type system. */
   sealed abstract class Type {
     def isMonotype: Boolean
@@ -68,10 +70,11 @@ object TypeSystem {
       args.isEmpty || args.forall(_.isMonotype)
     override def isSimple = args.isEmpty
 
+    // TODO - this shouldn't be hardcoded...
     override def toString =
       if(args.isEmpty) s"$name"
       else if(name == "Tuple2") s"(${args(0)}, ${args(1)})"
-      else if(args.length == 2) s"${args(0)} $name ${args(1)}"
+      else if(name == "→") s"${args(0)} $name ${args(1)}"
       else s"($name ${args.mkString(" ")})"
   }
 
