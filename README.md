@@ -5,6 +5,8 @@ A language for those who take themselves seriously.
 
 ## Installation
 
+  For a prebuilt package, simple download:  [ ![Download](https://api.bintray.com/packages/jsuereth/doge/dogec/images/download.png) ](https://bintray.com/jsuereth/doge/dogec/_latestVersion) 
+
   To build, requires [sbt](http://scala-sbt.org) and a java JRE.  Once sbt is installed, cd into the doge directory and type:
 
 
