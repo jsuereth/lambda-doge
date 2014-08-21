@@ -33,3 +33,10 @@ case class BoolLiteralTyped(value: Boolean, pos: Position = NoPosition) extends 
 case class IdReferenceTyped(name: String, tpe: Type, pos: Position = NoPosition) extends TypedAst {
   override def toString = s"$name[$tpe]"
 }
+
+case class ModuleTyped(name: String, definitions: Seq[LetExprTyped]) extends TypedAst {
+  override val tpe = TypeSystem.Unit
+  override val pos = NoPosition
+  override def toString = s"module $name {${definitions.mkString("\n  ","\n  ", "\n")}}"
+}
+

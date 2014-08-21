@@ -9,9 +9,9 @@ import doge.compiler.ast._
 
 object DogeParser extends RegexParsers {
 
-  def parseProgram(input: String) = {
-    parseAll(rep(expr), input) match {
-      case Success(result,_) => result
+  def parseModule(input: String, name: String): Module = {
+    parseAll(rep(letExpr), input) match {
+      case Success(result,_) => Module(name, result)
       case Failure(msg, next) => sys.error(s"Failure: $msg, at ${next.pos.line}:${next.pos.column}")
       case Error(msg, next) => sys.error(s"Error: $msg, at ${next.pos.line}:${next.pos.column}")
     }

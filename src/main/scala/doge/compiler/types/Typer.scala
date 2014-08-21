@@ -1,5 +1,7 @@
 package doge.compiler.types
 
+import doge.compiler.ast
+
 import scala.util.parsing.input.Position
 import TypeSystem._
 import Typer.Substitutions
@@ -35,8 +37,11 @@ object TyperEnvironment {
   def addSubstitutions(refines: Substitutions): TyperState[Unit] = State[TyperEnvironment, Unit] { state =>
     (state.copy(substitutions = state.substitutions ++ refines), ())
   }
-  // TODO - causes scala compiler crash, but not needed so far.
-  //def clearRefinements: TyperState[Unit] = State[TyperEnvironment, Unit](x => x.copy(refinements = Map.empty) -> ())
+  /** Clears all used substitutions.  usually necessary between let expressions to limit total inference. */
+  def clearSubstitutions: TyperState[Unit] =
+    State[TyperEnvironment, Unit] { state =>
+      (state.copy(substitutions = Map.empty[Long, Type]), ())
+    }
 
   /** Places some value inside the TyperState Monad, allowing future computations to lookup
     * values in the state.
@@ -63,6 +68,19 @@ object Typer {
   }
 
 
+  // Note:  Use typeAst for stateful version.
+  // This starts with state set to the passed in environment.
+  def typeFull(m: Module, env: Env): ModuleTyped = {
+    val typerRun =
+      for {
+        ast <- typeModule(m)
+        cleaned <- pruneAst(ast)
+      } yield cleaned.asInstanceOf[ModuleTyped] // TODO - lame hack
+    val (_, result) = typerRun(TyperEnvironment(env, Map.empty))
+    result
+  }
+
+
   /** Will compute the type for a given AST. */
   def typeAst(ref: DogeAst): TyperState[TypedAst] =
     // Hacky casts for variance, yay dawg.  We could also just map(x => x).
@@ -72,7 +90,23 @@ object Typer {
       case b: BoolLiteral => typeBoolLiteral(b).asInstanceOf[TyperState[TypedAst]]
       case app: ApExpr => typeApply(app).asInstanceOf[TyperState[TypedAst]]
       case let: LetExpr => typeLet(let).asInstanceOf[TyperState[TypedAst]]
+      case m: Module => typeModule(m).asInstanceOf[TyperState[TypedAst]]
     }
+
+  /** Types a complete module definition, including sharing let expressions. */
+  def typeModule(module: ast.Module): TyperState[ModuleTyped] = {
+    def typeLetAndExpose(l: LetExpr): TyperState[LetExprTyped] =
+       for {
+         lt <- typeLet(l)
+         pl <- pruneAst(lt)
+         _ <- clearSubstitutions
+         _ <- addEnvironment(lt.name -> pl.tpe)
+       } yield pl.asInstanceOf[LetExprTyped] // TODO - not so hacky
+    for {
+      args <- module.definitions.toList.traverse[TyperState, LetExprTyped](typeLetAndExpose)
+    } yield ModuleTyped(module.name, args)
+  }
+
 
   /** Computes type of IntLiteral ASTs. */
   private def typeIntLiteral(ast: IntLiteral): TyperState[IntLiteralTyped] =
@@ -122,7 +156,7 @@ object Typer {
   /**
    * Will type a let tree.  Does not add the let types into the state when complete.
    */
-  private def typeLet(ref: LetExpr): TyperState[TypedAst] = {
+  private def typeLet(ref: LetExpr): TyperState[LetExprTyped] = {
     if(ref.argNames.isEmpty) {
       // Simple let is just a name assigned to an expression
       for {
@@ -173,11 +207,18 @@ object Typer {
       } yield LetExprTyped(l.name, l.argNames, defn, tpe, l.pos)
 
     }
+    def pruneModule(l: ModuleTyped): TyperState[ModuleTyped] = {
+      for {
+        lets <- l.definitions.toList.traverse[TyperState, LetExprTyped](pruneLet)
+      } yield ModuleTyped(l.name, lets)
+
+    }
     ast match {
       case let: LetExprTyped => pruneLet(let).asInstanceOf[TyperState[TypedAst]]
       case ap: ApExprTyped => pruneAp(ap).asInstanceOf[TyperState[TypedAst]]
       case ref: IdReferenceTyped => pruneRef(ref).asInstanceOf[TyperState[TypedAst]]
       case l: LiteralTyped => withState(l)
+      case m: ModuleTyped => pruneModule(m).asInstanceOf[TyperState[TypedAst]]
     }
   }
 

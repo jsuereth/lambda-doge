@@ -86,6 +86,11 @@ object TypeSystem {
         case TypeConstructor("→", Seq(from, to)) => Some(from -> to)
         case _ => None
       }
+    // TODO - Handle failure
+    def arity(t: Type): Int = t match {
+      case Function(l, r) => 1 + arity(r)
+      case _ => 0
+    }
   }
   def FunctionN(to: Type, from: Type*): Type =
     from match {

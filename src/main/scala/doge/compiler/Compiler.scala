@@ -44,27 +44,12 @@ object Compiler {
   def compile(input: String, classDirectory: File, name: String, verbose: Boolean): File = {
     def log(msg: String): Unit = if(verbose) System.err.println(msg)
     log(s"Compiling [$name]...")
-    val parsed = parser.DogeParser.parseProgram(input)
-    log(s"  -- Parsed --\n${parsed.mkString("\n")}")
-    val typed = typeWithGlobalLet(parsed).collect({ case l: LetExprTyped => l })
-    log(s"  -- Typed--\n${typed.mkString("\n")}")
-    val clsFile = GenerateClassFiles.makeClassfile(typed, classDirectory, name)
+    val parsed = parser.DogeParser.parseModule(input, name)
+    log(s"  -- Parsed --\n${parsed}")
+    val typed = Typer.typeFull(parsed, builtInTypes)
+    log(s"  -- Typed--\n${typed}")
+    val clsFile = GenerateClassFiles.makeClassfile(typed, classDirectory)
     clsFile
-  }
-
-  private def typeWithGlobalLet(program: Seq[DogeAst]): Seq[TypedAst] = {
-    val zero = (builtInTypes, Seq.empty[TypedAst])
-    // This is a complete hack to share let environment since we INVERTED the let syntax for Doge.
-    // Ideally we track this in some other manner.
-    program.foldLeft(zero) { case ((env, typeResults), nextAst) =>
-      val typedTree = Typer.typeTree(nextAst, env)
-      val nextEnv = nextAst match {
-        case LetExpr(id, _, _, _) =>
-          env.withAdded(id -> typedTree.tpe)
-        case _ => env
-      }
-      (nextEnv, typeResults :+ typedTree)
-    }._2
   }
 
 

@@ -13,7 +13,12 @@ import scalaz._
 import Scalaz._
 
 
-case class MethodWriterState(className: String, mv: MethodVisitor, stackNameToIndex: Map[String, Int])
+case class MethodWriterState(className: String,
+                             mv: MethodVisitor,
+                             stackNameToIndex: Map[String, Int],
+                             methodName: String,
+                             lambdaClassIdx: Int = 0,
+                             outputDirectory: File)
 
 object MethodWriter {
 
@@ -137,7 +142,8 @@ object MethodWriter {
       // This method is not built in.  For now, we assume any non-built-in method is defined
       // on the same classfile.
       // TODO - Handle non-local methods
-      case ap @ ApExprTyped(id, args, _, _) => applyFunction(id, args)
+      case ap @ ApExprTyped(id, args, tpe, _) if TypeSystem.Function.arity(id.tpe) == args.length => applyFunction(id, args)
+      case ap @ ApExprTyped(id, args, tpe, _) => liftLambda(id, args, ap.pos)
       case i: IdReferenceTyped =>
         for {
           idx <- localVarIndex(i.name)
@@ -153,6 +159,21 @@ object MethodWriter {
         } yield ()
 
   })
+  // TODO - Maybe create a new set of ASTs where we can lift lambdas prior to bytecode generation.
+  import scala.util.parsing.input.Position
+  def liftLambda(id: IdReferenceTyped, args: Seq[TypedAst], pos: Position): State[MethodWriterState, Unit] = {
+    // TODO - implement a lifted lambda class and instantiate it.
+
+    // Basic idea:
+    // 1. Create a local static method which contains the actually function call, or inlined implementation.
+    // 2. Create a class (or static inner class) which contains:
+    //    - A method handle
+    //    - An instance of all the *bound* arguments for the function
+    //    - An apply method that takes the remaining (unbound) arguments.
+    //    - A constructor which takes the method handle and all bound arguments
+    // 3. Instantiate the anonymous class with the method handle and bound arguments here.
+    sys.error(s"Lambda lifting not implemented at:\n${pos.longString}")
+  }
 
   /** calls a function with a given reference and set of arguments. */
   def applyFunction(i: IdReferenceTyped, args: Seq[TypedAst]): State[MethodWriterState, Unit] = {
@@ -240,19 +261,19 @@ object MethodWriter {
 object GenerateClassFiles {
   import Opcodes._
 
-  def makeClassfile(methods: Seq[LetExprTyped], dir: File, name: String): File = {
-    val file = new java.io.File(dir, name + ".class")
+  def makeClassfile(module: ModuleTyped, dir: File): File = {
+    val file = new java.io.File(dir, module.name + ".class")
     val cw = new ClassWriter((ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS))
     cw.visit(V1_6,
       ACC_PUBLIC + ACC_SUPER,
-      name,
+      module.name,
       null,
       "java/lang/Object",
       null)
-    cw.visitSource(s"$name.doge", null)
+    cw.visitSource(s"${module.name}.doge", null)
     visitEmptyConstructor(cw)
     // Now we write the methods.
-    methods.foreach(m => writeMethod(m, name, cw))
+    module.definitions.foreach(m => writeMethod(m, module.name, cw, dir))
     cw.visitEnd()
     writeClassFile(file, cw)
     file
@@ -271,19 +292,19 @@ object GenerateClassFiles {
       mv.visitEnd()
   }
 
-  private def mainMethod(defn: TypedAst, cw: ClassWriter, className: String): Unit = {
+  private def mainMethod(defn: TypedAst, cw: ClassWriter, className: String, target: File): Unit = {
     // Handle this specially.. For now, just always hello world.
     val mv = cw.visitMethod(ACC_PUBLIC + ACC_STATIC,
       "main",
       "([Ljava/lang/String;)V",
       null,
       null);
-    val state = MethodWriterState(className, mv, Map.empty)
+    val state = MethodWriterState(className, mv, Map.empty, "main", 0, target)
     MethodWriter.writeMethod(defn)(state)
   }
 
-  private def writeMethod(ast: LetExprTyped, name: String, cw: ClassWriter): Unit = {
-    if(isMainMethod(ast)) mainMethod(ast.definition, cw, name)
+  private def writeMethod(ast: LetExprTyped, name: String, cw: ClassWriter, target: File): Unit = {
+    if(isMainMethod(ast)) mainMethod(ast.definition, cw, name, target)
     else {
       // TODO - we need to handle the possibility of returning functions here.
       // At a minimum, we need to identify argument types vs. return types.
@@ -294,7 +315,7 @@ object GenerateClassFiles {
          signature,
          null,
          null)
-      val state = MethodWriterState(name, mv, ast.argNames.zipWithIndex.toMap)
+      val state = MethodWriterState(name, mv, ast.argNames.zipWithIndex.toMap, ast.name, 0, target)
       MethodWriter.writeMethod(ast.definition)(state)
     }
   }
@@ -337,9 +358,9 @@ object GenerateClassFiles {
   private[backend] def visitSignatureInternal(signature: SignatureVisitor, tpe: Type, pos: Option[Position] = None): Unit =
     BuiltInType.all.visitSignatureInternal.applyOrElse[(SignatureVisitor, Type), Unit]((signature, tpe), {
       case (sv, Unit) => signature.visitBaseType('V')
-      // TODO - We don't really support passing functions yet.
       // TODO - Don't hardcode the object string everywhere.
-      //case (sv, f @ TypeSystem.Function(_, _)) => signature.visitClassType("java/lang/Object;")
+      // TODO - Eventually, we may want some kind of interface for objects...
+      case (sv, f @ TypeSystem.Function(_, _)) => signature.visitClassType("java/lang/Object;")
       case _ => sys.error(s"Unsupported argument/return type: [$tpe]${pos.map(_.longString).map("\n"+).getOrElse("")}")
     })
 
