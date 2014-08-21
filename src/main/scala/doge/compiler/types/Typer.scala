@@ -107,12 +107,13 @@ object Typer {
       apExpr <- withState(ref)
       funTree <- typeIdReference(apExpr.name)
       argTypes <- apExpr.args.toList.traverse(typeAst)
-      result <- unify(makeFuncForRefinement(argTypes), funTree.tpe)
+        // TODO - better positions for errors here...
+      result <- unify(makeFuncForRefinement(argTypes), funTree.tpe, ref.pos)
     } yield {
       // Rip result type out of unified type:
       val resultType = argTypes.foldLeft(result) {
         case (Function(from, to), current) => to
-        case t => throw new TypeError(s"Expected function type, got: $t while looking for result type of $result")
+        case t => throw new SyntaxTypeError(ref.pos, s"Expected function type, got: $t while looking for result type of $result")
       }
       ApExprTyped(funTree, argTypes, resultType)
     }
@@ -211,7 +212,7 @@ object Typer {
     * @param t2
     * @return
     */
-  def unify(t1: Type, t2: Type): TyperState[Type] = {
+  def unify(t1: Type, t2: Type, pos: Position): TyperState[Type] = {
     /** A method which marks a type variable as being replacable with another type.
       *
       * This modifies the "state" of the typer, such that for the rest of this session,
@@ -233,19 +234,19 @@ object Typer {
         // Detected that type variable a can use b's value.
         case (a: TypeVariable, b) =>
           if (a != b) {
-            if (occursIn(a, b)) throw TypeError(s"recursive unification of $a and $b")
+            if (occursIn(a, b)) throw SyntaxTypeError(pos, s"recursive unification of $a and $b")
             // Everywhere A shows up we need to replace with B.
             substitute(a, b)
           } else withState(a)
         // Detect a type variable to unify with a constructor, so we invert the relationship and delegate.
-        case (a: TypeConstructor, b: TypeVariable) => unify(b, a)
+        case (a: TypeConstructor, b: TypeVariable) => unify(b, a, pos)
         // Fundamental type-check operation.  We don't support polymorphism, type/term names need to
         // be exact, including for all args.
         case (a: TypeConstructor, b: TypeConstructor) =>
-          if (a.name != b.name || a.args.length != b.args.length) throw TypeError(s"Type mismatch: $a != $b")
+          if (a.name != b.name || a.args.length != b.args.length) throw SyntaxTypeError(pos, s"Type mismatch: $a != $b")
           // If all the args are the same, then we are the same type.
           for {
-            targs <- a.args.zip(b.args).toList.traverse[TyperState, Type]({ case (l,r) => unify(l,r)})
+            targs <- a.args.zip(b.args).toList.traverse[TyperState, Type]({ case (l,r) => unify(l,r, pos)})
           } yield TypeConstructor(a.name, targs)
       }
     } yield result
