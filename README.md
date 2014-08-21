@@ -62,6 +62,32 @@ And "run" the module via the following command:
 Which will print the output `123`.
 
 
+# Basics
+
+The entire DOGE language is composed of named expressions.  We can define a new named expression using the WOW statement.  For example:
+
+    WOW
+    <name>
+    <expr>
+    
+Expressions can be one of three things:
+
+1. An integer literal, e.g. `1` or `451`
+2. A boolean literal, i.e. `true` or `false`
+3. A function application, e.g. `MUCH <func> <args> !` **Note: the ! ends the function application**
+
+Named expressions may also have 'holes', i.e. function arguments.   These are denoted using the `SO` synatx, for example here is a method which adds one to any integer it is given:
+
+WOW
+addOne
+SO number
+VERY Plus number 1!
+
+
+Besides this basic syntax, there are a set of built in functions you can use to define your program.
+
+Additionally, any zero-argment expression named `main` will be evaluated as the "application" on the JVM.
+
 
 # Standard Library
 
