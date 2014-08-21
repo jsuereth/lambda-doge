@@ -23,10 +23,10 @@ Below follows a minor user guide.
 
 # Getting Started
 
-WOW
-SUCH language!
-Much typing!
-Very Welcome!
+    WOW
+    SUCH language!
+    Much typing!
+    Very Welcome!
 
 DOGE is a staticly typed language based, loosely, on lambda calculus with several ideas taken from Haskell.
 
@@ -78,10 +78,10 @@ Expressions can be one of three things:
 
 Named expressions may also have 'holes', i.e. function arguments.   These are denoted using the `SO` synatx, for example here is a method which adds one to any integer it is given:
 
-WOW
-addOne
-SO number
-VERY Plus number 1!
+    WOW
+    addOne
+    SO number
+    VERY Plus number 1!
 
 
 Besides this basic syntax, there are a set of built in functions you can use to define your program.
