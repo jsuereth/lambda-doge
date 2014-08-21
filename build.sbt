@@ -12,6 +12,8 @@ scalacOptions in Test ++= Seq("-Yrangepos")
 
 packageArchetype.java_application
 
+deploymentSettings
+
 mainClass in Compile := Some("doge.compiler.Compiler")
 
 name := "dogec"
@@ -19,3 +21,15 @@ name := "dogec"
 organization := "com.jsuereth.doge"
 
 version := "0.1"
+
+
+val bintrayUrl = "https://api.bintray.com/content/jsuereth/doge/dogc"
+
+val bintrayPattern = Patterns("[revision]/[module]-[revision].[ext]")
+
+publishTo in Universal :=
+  Some(Resolver.url("bintray-doge", url(bintrayUrl))(bintrayPattern))
+
+resolvers ++= (publishTo in Universal).value.toSeq
+
+mappings in Universal += ((baseDirectory.value / "README.md") -> "README.md")
