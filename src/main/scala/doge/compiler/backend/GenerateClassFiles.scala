@@ -340,7 +340,7 @@ object GenerateClassFiles {
       // TODO - We don't really support passing functions yet.
       // TODO - Don't hardcode the object string everywhere.
       //case (sv, f @ TypeSystem.Function(_, _)) => signature.visitClassType("java/lang/Object;")
-      case _ => sys.error(s"Unsupported argument/return type: [$tpe]${pos.map(_.longString).getOrElse("")}")
+      case _ => sys.error(s"Unsupported argument/return type: [$tpe]${pos.map(_.longString).map("\n"+).getOrElse("")}")
     })
 
 }
