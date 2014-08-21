@@ -68,6 +68,9 @@ object MethodWriter {
     mws -> ()
   }
 
+
+
+
   /**
    * Loads a local variable off the local variable stack, by name.
    *
@@ -109,8 +112,8 @@ object MethodWriter {
 
 
   /** Will invoke a method defined in the current classfile, with the given type. */
-  def callStaticLocalMethod(name: String, tpe: Type) = State[MethodWriterState, Unit] { state =>
-    state.mv.visitMethodInsn(INVOKESTATIC, state.className, name, GenerateClassFiles.getFunctionSignature(tpe))
+  def callStaticLocalMethod(name: String, args: Int, tpe: Type) = State[MethodWriterState, Unit] { state =>
+    state.mv.visitMethodInsn(INVOKESTATIC, state.className, name, GenerateClassFiles.getFunctionSignature(tpe, args))
     state -> ()
   }
 
@@ -129,12 +132,12 @@ object MethodWriter {
       case b: BoolLiteralTyped => loadConstant(new java.lang.Boolean(b.value))
       // TODO - how to handle id references?
       // TODO - move these into builtins...
-      case ApExprTyped(i, Seq(id), _) if i.name == "IS" => placeOnStack(id)
-      case ApExprTyped(id, args, _) if id.name == "PrintLn" => builtInFunctions.println(args)
+      case ApExprTyped(i, Seq(id), _, _) if i.name == "IS" => placeOnStack(id)
+      case ApExprTyped(id, args, _, _) if id.name == "PrintLn" => builtInFunctions.println(args)
       // This method is not built in.  For now, we assume any non-built-in method is defined
       // on the same classfile.
       // TODO - Handle non-local methods
-      case ap @ ApExprTyped(id, args, _) => applyFunction(id, args)
+      case ap @ ApExprTyped(id, args, _, _) => applyFunction(id, args)
       case i: IdReferenceTyped =>
         for {
           idx <- localVarIndex(i.name)
@@ -142,8 +145,10 @@ object MethodWriter {
             case Some(idx) => loadLocalVariable(i.tpe, idx)
             case _ =>
               // Here we assume any non-local variable reference is a local
-              // method call.  TODO - Allow non-local method calls/referencing members.
-              callStaticLocalMethod(i.name, i.tpe)
+              // method call.
+              // TODO - Allow non-local method calls/referencing members.
+              // TODO - Lambda lift here
+              callStaticLocalMethod(i.name, 0, i.tpe)
           }
         } yield ()
 
@@ -151,10 +156,11 @@ object MethodWriter {
 
   /** calls a function with a given reference and set of arguments. */
   def applyFunction(i: IdReferenceTyped, args: Seq[TypedAst]): State[MethodWriterState, Unit] = {
+    // TODO _ Check to see if we need to lambda lift here.
     type S[A] = State[MethodWriterState, A]
     for {
       _ <- args.reverse.toList.traverse[S, Unit](placeOnStack)
-      _ <- callStaticLocalMethod(i.name, i.tpe)
+      _ <- callStaticLocalMethod(i.name, args.size, i.tpe)
     } yield ()
 
   }
@@ -170,8 +176,8 @@ object MethodWriter {
   }
 
   // TODO - Unify this with Java types as exposed in the typesystem later.
-  def invokeVirtual(className: String, methodName: String, tpe: Type) = State[MethodWriterState, Unit] { state =>
-    state.mv.visitMethodInsn(INVOKEVIRTUAL, className, methodName, GenerateClassFiles.getFunctionSignature(tpe))
+  def invokeVirtual(className: String, methodName: String, argCount: Int, tpe: Type) = State[MethodWriterState, Unit] { state =>
+    state.mv.visitMethodInsn(INVOKEVIRTUAL, className, methodName, GenerateClassFiles.getFunctionSignature(tpe, argCount))
     state -> ()
   }
 
@@ -186,7 +192,7 @@ object MethodWriter {
        out <- stdout
        _ <- placeOnStack(in)
        // TODO - convert to string if not already string.
-       _ <- invokeVirtual("java/io/PrintStream", "print", TypeSystem.Function(in.tpe, TypeSystem.Unit))
+       _ <- invokeVirtual("java/io/PrintStream", "print", 1, TypeSystem.Function(in.tpe, TypeSystem.Unit))
      } yield ()
     /** Writes the println method. */
     def println(args: Seq[TypedAst]): State[MethodWriterState, Unit] = {
@@ -279,8 +285,9 @@ object GenerateClassFiles {
   private def writeMethod(ast: LetExprTyped, name: String, cw: ClassWriter): Unit = {
     if(isMainMethod(ast)) mainMethod(ast.definition, cw, name)
     else {
-      // TODO - generic write method impl...
-      val signature = getFunctionSignature(ast.tpe)
+      // TODO - we need to handle the possibility of returning functions here.
+      // At a minimum, we need to identify argument types vs. return types.
+      val signature = getFunctionSignature(ast.tpe, ast.argNames.size, Some(ast.pos))
       // TODO - generic signature...
       val mv = cw.visitMethod(ACC_PUBLIC + ACC_STATIC,
          ast.name,
@@ -303,42 +310,37 @@ object GenerateClassFiles {
   def isMainMethod(m: LetExprTyped): Boolean =
     (m.name == "main") && (m.tpe == Unit)
 
-
-  def main(args: Array[String]): Unit = {
-    import TypeSystem._
-    val test = FunctionN(Integer, Integer, Integer)
-    println(s"$test signature = ${getFunctionSignature(test)}")
-  }
-
-  def getFunctionSignature(tpe: Type): String = {
+  import scala.util.parsing.input.Position
+  def getFunctionSignature(tpe: Type, args: Int, pos: Option[Position ] = None): String = {
     import TypeSystem.Function
     val signature = new SignatureWriter()
-    def visitFunctionSignature(signature: SignatureVisitor, f: Type): Unit =
+    def visitFunctionSignature(signature: SignatureVisitor, f: Type, args: Int): Unit =
       f match {
+        case f if args <= 0 =>
+          visitSignatureInternal(signature.visitReturnType, f, pos)
         case Function(arg, next @ Function(_,_)) =>
           signature.visitParameterType()
-          visitSignatureInternal(signature, arg)
-          visitFunctionSignature(signature, next)
+          visitSignatureInternal(signature, arg, pos)
+          visitFunctionSignature(signature, next, args - 1)
         case Function(arg, result) =>
           signature.visitParameterType()
-          visitSignatureInternal(signature, arg)
-          visitFunctionSignature(signature, result)
+          visitSignatureInternal(signature, arg, pos)
+          visitFunctionSignature(signature, result, args - 1)
         // TODO _ Everything else is assumed to be an object
-        case other => visitSignatureInternal(signature.visitReturnType, other)
+        case _ => sys.error(s"Reached end of function signature type, but not end of argument count required! type: $f")
       }
-    visitFunctionSignature(signature, tpe)
+    visitFunctionSignature(signature, tpe, args)
     signature.toString
   }
 
-  private[backend] def visitSignatureInternal(signature: SignatureVisitor, tpe: Type): Unit =
+  /** Represents the type of argument (or return type) for a method on the JVM */
+  private[backend] def visitSignatureInternal(signature: SignatureVisitor, tpe: Type, pos: Option[Position] = None): Unit =
     BuiltInType.all.visitSignatureInternal.applyOrElse[(SignatureVisitor, Type), Unit]((signature, tpe), {
       case (sv, Unit) => signature.visitBaseType('V')
       // TODO - We don't really support passing functions yet.
-      case (sv, f @ TypeSystem.Function(_, _)) => signature.visitClassType("java/lang/Object;")
       // TODO - Don't hardcode the object string everywhere.
-      // TODO - This bit should come from the Tuple2 built-in hook.
-      case (sv, TypeConstructor("Tuple2", _)) => signature.visitArrayType().visitClassType("java/lang/Object;")
-      case _ => sys.error(s"Unsupported type: $tpe")
+      //case (sv, f @ TypeSystem.Function(_, _)) => signature.visitClassType("java/lang/Object;")
+      case _ => sys.error(s"Unsupported argument/return type: [$tpe]${pos.map(_.longString).getOrElse("")}")
     })
 
 }

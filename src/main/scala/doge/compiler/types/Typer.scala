@@ -76,16 +76,16 @@ object Typer {
 
   /** Computes type of IntLiteral ASTs. */
   private def typeIntLiteral(ast: IntLiteral): TyperState[IntLiteralTyped] =
-    State(x => x -> IntLiteralTyped(ast.value))
+    State(x => x -> IntLiteralTyped(ast.value, ast.pos))
 
   private def typeBoolLiteral(ast: BoolLiteral): TyperState[BoolLiteralTyped] =
-    State(x => x -> BoolLiteralTyped(ast.value))
+    State(x => x -> BoolLiteralTyped(ast.value, ast.pos))
   /** Computes the type of ID references.  Essentially just a lookup on state. */
   private def typeIdReference(ref: IdReference): TyperState[IdReferenceTyped] =
     for {
       id <- withState(ref)
       e <- env
-    } yield IdReferenceTyped(id.name, e.lookup(id.name))
+    } yield IdReferenceTyped(id.name, e.lookup(id.name), ref.pos)
 
   /** Creates a new function type which is a curried
     * application of all types in the argument AST and a
@@ -115,7 +115,7 @@ object Typer {
         case (Function(from, to), current) => to
         case t => throw new SyntaxTypeError(ref.pos, s"Expected function type, got: $t while looking for result type of $result")
       }
-      ApExprTyped(funTree, argTypes, resultType)
+      ApExprTyped(funTree, argTypes, resultType, ref.pos)
     }
 
 
@@ -127,7 +127,7 @@ object Typer {
       // Simple let is just a name assigned to an expression
       for {
         result <- typeAst(ref.definition)
-      } yield LetExprTyped(ref.name, Nil, result, result.tpe)
+      } yield LetExprTyped(ref.name, Nil, result, result.tpe, ref.pos)
     } else {
       // Complicated let is complicated.
       // Lambda is: name => (argNmaes curried) => definitioin type
@@ -145,7 +145,7 @@ object Typer {
       for {
         _ <- addEnvironment(argToType.toSeq:_*)
         resultAst <- typeAst(ref.definition)
-      } yield LetExprTyped(ref.name, ref.argNames, resultAst, makeFuncType(resultAst.tpe))
+      } yield LetExprTyped(ref.name, ref.argNames, resultAst, makeFuncType(resultAst.tpe), ref.pos)
     }
   }
 
@@ -157,20 +157,20 @@ object Typer {
     def pruneRef(id: IdReferenceTyped): TyperState[IdReferenceTyped] = {
       for {
         tpe <- recursivePrune(id.tpe)
-      } yield IdReferenceTyped(id.name, tpe)
+      } yield IdReferenceTyped(id.name, tpe, id.pos)
     }
     def pruneAp(ap: ApExprTyped): TyperState[ApExprTyped] = {
       for {
         tpe <- recursivePrune(ap.tpe)
         args <- ap.args.toList.traverse(pruneAst)
         name <- pruneRef(ap.name)
-      } yield ApExprTyped(name, args, tpe)
+      } yield ApExprTyped(name, args, tpe, ap.pos)
     }
     def pruneLet(l: LetExprTyped): TyperState[LetExprTyped] = {
       for {
         tpe <- recursivePrune(l.tpe)
         defn <- pruneAst(l.definition)
-      } yield LetExprTyped(l.name, l.argNames, defn, tpe)
+      } yield LetExprTyped(l.name, l.argNames, defn, tpe, l.pos)
 
     }
     ast match {

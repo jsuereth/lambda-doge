@@ -28,10 +28,10 @@ object Integers extends BuiltInType {
     )
 
   override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
-    case ApExprTyped(id, Seq(left, right), _) if id.name == "Plus" => plus(left, right)
-    case ApExprTyped(id, Seq(left, right), _) if id.name == "Minus" => minus(left, right)
-    case ApExprTyped(id, Seq(left, right), _) if id.name == "Multiply" => mult(left, right)
-    case ApExprTyped(id, Seq(left, right), _) if id.name == "Divide" => divide(left, right)
+    case ApExprTyped(id, Seq(left, right), _, _) if id.name == "Plus" => plus(left, right)
+    case ApExprTyped(id, Seq(left, right), _, _) if id.name == "Minus" => minus(left, right)
+    case ApExprTyped(id, Seq(left, right), _, _) if id.name == "Multiply" => mult(left, right)
+    case ApExprTyped(id, Seq(left, right), _, _) if id.name == "Divide" => divide(left, right)
   }
 
   override val visitSignatureInternal: PartialFunction[(SignatureVisitor, Type), Unit] = {

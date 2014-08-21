@@ -30,7 +30,7 @@ trait FullCompilerSpec extends Specification {
 
 
   private[this] def evaluateTest[A](program: String)(implicit mf: ClassTag[A]): A = IO.withTemporaryDirectory { dir =>
-    Compiler.compile(program, dir, "test")
+    Compiler.compile(program, dir, "test", false)
     ClassLoaderUtils.loadTestMethodResult(dir)
   }
 

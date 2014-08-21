@@ -36,11 +36,11 @@ object Lists extends BuiltInType {
   )
 
   override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
-    case ApExprTyped(i, _, _) if i.name == NIL => writeNil
-    case IdReferenceTyped(NIL, _)  => writeNil
-    case ApExprTyped(i, Seq(front, lstExpr), tpe) if i.name == CONS => writeCons(front, lstExpr)
-    case ApExprTyped(i, Seq(lstExpr), tpe) if i.name == HEAD => writeHead(lstExpr)
-    case ApExprTyped(i, Seq(lstExpr), tpe) if i.name == TAIL => writeTail(lstExpr)
+    case ApExprTyped(i, _, _, _) if i.name == NIL => writeNil
+    case IdReferenceTyped(NIL, _, _)  => writeNil
+    case ApExprTyped(i, Seq(front, lstExpr), tpe, _) if i.name == CONS => writeCons(front, lstExpr)
+    case ApExprTyped(i, Seq(lstExpr), tpe, _) if i.name == HEAD => writeHead(lstExpr)
+    case ApExprTyped(i, Seq(lstExpr), tpe, _) if i.name == TAIL => writeTail(lstExpr)
   }
 
   import doge.compiler.backend.MethodWriter._

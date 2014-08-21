@@ -42,15 +42,15 @@ object DogeTuple2 extends BuiltInType {
   )
 
   override val visitSignatureInternal: PartialFunction[(SignatureVisitor, Type), Unit] = {
-    case (sv, TypeConstructor(name, Seq(arg1, arg2))) =>
+    case (sv, TypeConstructor(`name`, Seq(arg1, arg2))) =>
         sv.visitArrayType().visitClassType("java/lang/Object;")
   }
 
   // Actual implementation of the methods exposed.
   override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
-    case ApExprTyped(IdReferenceTyped(CONSTRUCTOR, _), Seq(left, right), tpe) => constructorImpl(left, right)
-    case ApExprTyped(IdReferenceTyped(FIRST, _), Seq(tuple), tpe) => fstMethodImpl(tuple)
-    case ApExprTyped(IdReferenceTyped(SECOND, _), Seq(tuple), tpe) => fstMethodImpl(tuple)
+    case ApExprTyped(IdReferenceTyped(CONSTRUCTOR, _, _), Seq(left, right), tpe, _) => constructorImpl(left, right)
+    case ApExprTyped(IdReferenceTyped(FIRST, _, _), Seq(tuple), tpe, _) => fstMethodImpl(tuple)
+    case ApExprTyped(IdReferenceTyped(SECOND, _, _), Seq(tuple), tpe, _) => fstMethodImpl(tuple)
   }
 
   private def fstMethodImpl(tuple: TypedAst): State[MethodWriterState, Unit] = {

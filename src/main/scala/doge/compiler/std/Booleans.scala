@@ -36,7 +36,7 @@ object Booleans extends BuiltInType {
 
 
   override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
-    case ApExprTyped(i, Seq(check, left, right), tpe) if i.name == IF => ifs(check, left, right, tpe)
+    case ApExprTyped(i, Seq(check, left, right), tpe, pos) if i.name == IF => ifs(check, left, right, tpe)
   }
 
 

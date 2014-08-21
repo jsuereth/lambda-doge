@@ -33,17 +33,21 @@ object Compiler {
     std.BuiltInType.all.typeTable)
 
   /** A very simple example of compiling DOGE script. */
-  def compile(f: File): File = {
+  def compile(f: File, verbose: Boolean): File = {
     val s = scala.io.Source.fromFile(f)
     try {
       val input = s.getLines.mkString("\n")
-      compile(input, f.getParentFile, rawName(f))
+      compile(input, f.getParentFile, rawName(f), verbose)
     } finally s.close()
   }
 
-  def compile(input: String, classDirectory: File, name: String): File = {
+  def compile(input: String, classDirectory: File, name: String, verbose: Boolean): File = {
+    def log(msg: String): Unit = if(verbose) System.err.println(msg)
+    log(s"Compiling [$name]...")
     val parsed = parser.DogeParser.parseProgram(input)
+    log(s"  -- Parsed --\n${parsed.mkString("\n")}")
     val typed = typeWithGlobalLet(parsed).collect({ case l: LetExprTyped => l })
+    log(s"  -- Typed--\n${typed.mkString("\n")}")
     val clsFile = GenerateClassFiles.makeClassfile(typed, classDirectory, name)
     clsFile
   }
@@ -74,9 +78,11 @@ object Compiler {
       import pos._
       lineContents.take(column - 1).map { x => if (x == '\t') x else ' '} + "^"
     }*/
-    for(arg <- args) {
+    val verbose = args.exists(_ == "-v")
+
+    for(arg <- args.filterNot(_ == "-v")) {
       val f = new File(arg)
-      try compile(f)
+      try compile(f, verbose)
       catch {
         case ste: SyntaxTypeError  =>
           System.err.println(s"[ERROR] ${arg}@${ste.pos.line}:${ste.pos.column} - ${ste.msg}\n${ste.pos.longString}")
