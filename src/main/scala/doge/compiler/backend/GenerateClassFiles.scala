@@ -22,6 +22,10 @@ case class MethodWriterState(className: String,
 
 object MethodWriter {
 
+  def classDirectory = State[MethodWriterState, File] { mws => mws -> mws.outputDirectory}
+  // TODO - Better mechanism here
+  def sourceFilename = State[MethodWriterState, String] { mws => mws -> s"${mws.className}.doge"}
+
   def localVarIndex(name: String) = State[MethodWriterState, Option[Int]] { mws =>
     // TODO - Possibly error out here?
     (mws, mws.stackNameToIndex.get(name))
@@ -71,6 +75,11 @@ object MethodWriter {
       case _ => // Ignore, we are already boxed
     }
     mws -> ()
+  }
+
+  def nextLambdaClassName = State[MethodWriterState, String] { state =>
+    val id = state.lambdaClassIdx + 1
+    state.copy(lambdaClassIdx = id) -> s"${state.className}$$${state.methodName}$$fun$$${id}"
   }
 
 
@@ -129,6 +138,13 @@ object MethodWriter {
     state -> ()
   }
 
+  def getLocalField(s: LocalField) = State[MethodWriterState, Unit] { state =>
+    // First we grab `this`, then we get the argument.
+    state.mv.visitVarInsn(ALOAD,0)
+    state.mv.visitFieldInsn(GETFIELD, s.className, s.field, GenerateClassFiles.getFieldSignature(s.tpe))
+    state -> ()
+  }
+
   /** Places the result of an Ast expression onto the JVM stack.
     *
     * Note: This will either:
@@ -150,6 +166,8 @@ object MethodWriter {
 
       // This is references an expression with no arguments, we just call the method to evaluate it.
       case IdReferenceTyped(_, Location(s @ StaticMethod(_, _, Nil, _ )), _) => callStaticMethod(s)
+      // we're inside a lambda class, and we can just grab a locally captured field.
+      case IdReferenceTyped(_, Location(s : LocalField), _) => getLocalField(s)
 
       // Here are straight up method calls with all known arguments
       case ap @ ApExprTyped(IdReferenceTyped(_, Location(s @ StaticMethod(_, _, argTypes, _)), _), args, tpe, _) if argTypes.length == args.length =>
@@ -180,17 +198,23 @@ object MethodWriter {
   // TODO - Maybe create a new set of ASTs where we can lift lambdas prior to bytecode generation.
   import scala.util.parsing.input.Position
   def liftLambda(id: IdReferenceTyped, args: Seq[TypedAst], pos: Position): State[MethodWriterState, Unit] = {
-    // TODO - implement a lifted lambda class and instantiate it.
 
-    // Basic idea:
-    // 1. Create a local static method which contains the actually function call, or inlined implementation.
-    // 2. Create a class (or static inner class) which contains:
-    //    - A method handle
-    //    - An instance of all the *bound* arguments for the function
-    //    - An apply method that takes the remaining (unbound) arguments.
-    //    - A constructor which takes the method handle and all bound arguments
-    // 3. Instantiate the anonymous class with the method handle and bound arguments here.
-    sys.error(s"Lambda lifting not implemented at:\n${pos.longString}")
+    val writeLambdaClass = for {
+      name <- nextLambdaClassName
+      out <- classDirectory
+      source <- sourceFilename
+    } yield {
+      LambdaWriter.writeLambdaClass(id, args.map(_.tpe), name, source, out)
+      name
+    }
+    type MWS[A] = State[MethodWriterState, A]
+    for {
+      cn <- writeLambdaClass
+      _ <- rawInsn(_.visitTypeInsn(NEW, cn))
+      _ <- dupe
+      _ <- args.toList.traverse[MWS, Unit](placeOnStack)
+      _ <- rawInsn(_.visitMethodInsn(INVOKESPECIAL, cn, "<init>", GenerateClassFiles.getMethodSignature(args.map(_.tpe), Unit)))
+    } yield ()
   }
 
   /** calls a function with a given reference and set of arguments. */
@@ -282,7 +306,7 @@ object GenerateClassFiles {
   def makeClassfile(module: ModuleTyped, dir: File): File = {
     val file = new java.io.File(dir, module.name + ".class")
     val cw = new ClassWriter((ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS))
-    cw.visit(V1_6,
+    cw.visit(V1_7,
       ACC_PUBLIC + ACC_SUPER,
       module.name,
       null,
@@ -339,7 +363,7 @@ object GenerateClassFiles {
   }
 
 
-  private def writeClassFile(f: File, cw: ClassWriter): Unit = {
+  private[backend] def writeClassFile(f: File, cw: ClassWriter): Unit = {
     val out = new FileOutputStream(f)
     try out.write(cw.toByteArray)
     finally out.close()
@@ -369,6 +393,12 @@ object GenerateClassFiles {
         case _ => sys.error(s"Reached end of function signature type, but not end of argument count required! type: $f")
       }
     visitFunctionSignature(signature, tpe, args)
+    signature.toString
+  }
+
+  def getFieldSignature(tpe: Type): String = {
+    val signature = new SignatureWriter()
+    visitSignatureInternal(signature, tpe)
     signature.toString
   }
 
