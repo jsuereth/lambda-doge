@@ -43,8 +43,15 @@ class TyperSpec extends Specification { def is = s2"""
 
   def unifyApplication =
      ApExpr(IdReference("plus"), Seq(ApExpr(IdReference("is"), Seq(IntLiteral(1))))) must
-       typeAs(ApExprTyped(name = IdReferenceTyped("plus", plusType),
-                         args = Seq(ApExprTyped(IdReferenceTyped("is", Function(Integer, Integer)), Seq(IntLiteralTyped(1)), Integer)),
+       typeAs(ApExprTyped(name = IdReferenceTyped("plus", TypeEnvironmentInfo("plus", BuiltIn, plusType)),
+                         args = Seq(ApExprTyped(
+                           IdReferenceTyped("is", TypeEnvironmentInfo(
+                             "is",
+                             BuiltIn,
+                             Function(Integer, Integer)
+                           )),
+
+                           Seq(IntLiteralTyped(1)), Integer)),
                          tpe = Function(Integer, Integer)))
 
 
@@ -56,8 +63,8 @@ class TyperSpec extends Specification { def is = s2"""
           name = "plusOne",
           argNames = Seq("x"),
           definition = ApExprTyped(
-                          name = IdReferenceTyped("plus", plusType),
-                          args = Seq(IdReferenceTyped("x", Integer), IntLiteralTyped(1)),
+                          name = IdReferenceTyped("plus", TypeEnvironmentInfo("plus", BuiltIn, plusType)),
+                          args = Seq(IdReferenceTyped("x", TypeEnvironmentInfo("x", Argument, Integer)), IntLiteralTyped(1)),
                           tpe = Integer),
           tpe = Function(Integer, Integer)
         )
@@ -100,9 +107,7 @@ class TyperSpec extends Specification { def is = s2"""
   }
 
   lazy val defaultTypeEnv =
-    TypeSystem.dumbEnvironment(Map(
-      "is" -> isType,
-      "plus" -> plusType
-
-    ))
+    TypeEnv.dumbEnvironment(Seq(
+      TypeEnvironmentInfo("is", BuiltIn, isType),
+      TypeEnvironmentInfo("plus", BuiltIn, plusType)))
 }

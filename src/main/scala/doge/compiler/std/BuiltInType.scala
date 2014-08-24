@@ -3,6 +3,7 @@ package doge.compiler.std
 import doge.compiler.backend.MethodWriterState
 import doge.compiler.types.TypeSystem.Type
 import doge.compiler.types.TypedAst
+import doge.compiler.types.TypeEnvironmentInfo
 import org.objectweb.asm.signature.SignatureVisitor
 
 import scalaz._
@@ -11,7 +12,7 @@ import scalaz._
 
 trait BuiltInType {
   // TODO - figure out how to import these rather than always included.
-  def typeTable: Map[String, Type] = Map.empty
+  def typeTable: Seq[TypeEnvironmentInfo] = Nil
   def backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = PartialFunction.empty
   def visitSignatureInternal: PartialFunction[(SignatureVisitor, Type), Unit] = PartialFunction.empty
 

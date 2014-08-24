@@ -17,26 +17,6 @@ case class TypeError(msg: String) extends Exception(msg)
   */
 object TypeSystem {
 
-  /** Defines an environment where we can lookup types.
-    *  e.g. when type checking an expression, we need to
-    *  know the types of terms/references used.
-    */
-  trait Env {
-    def lookup(name: String): Type
-    def withAdded(types: (String, Type)*): Env
-  }
-
-  def dumbEnvironment(initial: Map[String, Type] = Map.empty[String,Type]): Env = new Env {
-    def lookup(name: String): Type = {
-      initial.get(name).getOrElse {
-        throw new TypeError(s"Type not found for term: $name in ${initial.mkString("\n * ","\n * ", "\n")}")
-      }
-    }
-    def withAdded(types: (String, Type)*): Env = {
-      dumbEnvironment(initial ++ types)
-    }
-  }
-
   // TODO - We need a way to pickle types in/out for modules...
 
   /** Base class for all types in this type system. */

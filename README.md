@@ -68,7 +68,7 @@ The entire DOGE language is composed of named expressions.  We can define a new 
 
     WOW
     <name>
-    <expr>
+    <function application expr>
     
 Expressions can be one of three things:
 
@@ -81,7 +81,7 @@ Named expressions may also have 'holes', i.e. function arguments.   These are de
     WOW
     addOne
     SO number
-    VERY Plus number 1!
+    MUCH Plus number 1!
 
 
 Besides this basic syntax, there are a set of built in functions you can use to define your program.

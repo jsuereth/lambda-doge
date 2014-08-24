@@ -10,6 +10,17 @@ sealed trait TypedAst {
   def pos: Position
 }
 case class LetExprTyped(name: String, argNames: Seq[String], definition: TypedAst, tpe: Type, pos: Position = NoPosition) extends TypedAst {
+  def returnType: Type = definition.tpe
+
+  def argTypes: Seq[Type] = {
+    def argTypeImpl(args: List[Type], tpe: Type, remaining: Int): Seq[Type] =
+      if(remaining == 0) args.reverse
+      else tpe match {
+        case TypeSystem.Function(arg, to) => argTypeImpl(arg :: args, to, remaining-1)
+        case _ => throw new SyntaxTypeError(pos, s"Let expression type error, not enough arguments.  Expected ${argNames.size}, found type: $tpe")
+      }
+    argTypeImpl(Nil, tpe, argNames.size)
+  }
   private def argList = argNames map (n => s"$n: ???")
   override def toString =
     s"""|let $name(${argNames.mkString(", ")}) :: $tpe
@@ -30,8 +41,10 @@ case class BoolLiteralTyped(value: Boolean, pos: Position = NoPosition) extends 
   override def toString = s"$value[bool]"
   override def tpe = TypeSystem.Bool
 }
-case class IdReferenceTyped(name: String, tpe: Type, pos: Position = NoPosition) extends TypedAst {
-  override def toString = s"$name[$tpe]"
+
+case class IdReferenceTyped(name: String, env: TypeEnvironmentInfo, pos: Position = NoPosition) extends TypedAst {
+  override def tpe = env.tpe
+  override def toString = s"<${env.location}>$name[$tpe]</${env.location}>"
 }
 
 case class ModuleTyped(name: String, definitions: Seq[LetExprTyped]) extends TypedAst {

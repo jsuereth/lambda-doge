@@ -3,7 +3,7 @@ package std
 
 
 import org.objectweb.asm.Opcodes._
-import doge.compiler.types.{IdReferenceTyped, ApExprTyped, TypedAst}
+import doge.compiler.types._
 import org.objectweb.asm.signature.SignatureVisitor
 import types.TypeSystem._
 import backend._
@@ -23,22 +23,22 @@ object DogeTuple2 extends BuiltInType {
   val name = "Tuple2"
 
   // Typing table, for running typer.
-  override val typeTable = Map[String, Type](
-    FIRST-> {
+  override val typeTable = Seq[TypeEnvironmentInfo](
+    TypeEnvironmentInfo(FIRST, BuiltIn, {
       val a = newVariable
       val b = newVariable
       Function(TypeConstructor(name, Seq(a, b)), a)
-    },
-    SECOND -> {
+    }),
+    TypeEnvironmentInfo(SECOND, BuiltIn, {
       val a = newVariable
       val b = newVariable
       Function(TypeConstructor(name, Seq(a, b)), b)
-    },
-    CONSTRUCTOR -> {
+    }),
+    TypeEnvironmentInfo(CONSTRUCTOR, BuiltIn, {
       val a = newVariable
       val b = newVariable
       FunctionN(TypeConstructor(name, Seq(a, b)), a, b)
-    }
+    })
   )
 
   override val visitSignatureInternal: PartialFunction[(SignatureVisitor, Type), Unit] = {

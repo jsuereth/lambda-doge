@@ -4,7 +4,7 @@ package doge.compiler.std
 import doge.compiler.backend.{MethodWriter, MethodWriterState}
 import doge.compiler.std
 import doge.compiler.types.TypeSystem.Type
-import doge.compiler.types.{ApExprTyped, TypeSystem, TypedAst}
+import doge.compiler.types._
 import org.objectweb.asm.Label
 import org.objectweb.asm.signature.SignatureVisitor
 import org.objectweb.asm.Opcodes._
@@ -29,9 +29,9 @@ object Booleans extends BuiltInType {
     )
   }
 
-  override val typeTable: Map[String, Type] =
-    Map(
-      IF -> ifType
+  override val typeTable: Seq[TypeEnvironmentInfo] =
+    Seq(
+      TypeEnvironmentInfo(IF, BuiltIn, ifType)
     )
 
 

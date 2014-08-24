@@ -117,8 +117,15 @@ object MethodWriter {
 
 
   /** Will invoke a method defined in the current classfile, with the given type. */
+  @deprecated
   def callStaticLocalMethod(name: String, args: Int, tpe: Type) = State[MethodWriterState, Unit] { state =>
     state.mv.visitMethodInsn(INVOKESTATIC, state.className, name, GenerateClassFiles.getFunctionSignature(tpe, args))
+    state -> ()
+  }
+
+
+  def callStaticMethod(m: StaticMethod) = State[MethodWriterState, Unit] { state =>
+    state.mv.visitMethodInsn(INVOKESTATIC, m.className, m.method, GenerateClassFiles.getMethodSignature(m.args, m.result))
     state -> ()
   }
 
@@ -139,26 +146,37 @@ object MethodWriter {
       // TODO - move these into builtins...
       case ApExprTyped(i, Seq(id), _, _) if i.name == "IS" => placeOnStack(id)
       case ApExprTyped(id, args, _, _) if id.name == "PrintLn" => builtInFunctions.println(args)
-      // This method is not built in.  For now, we assume any non-built-in method is defined
-      // on the same classfile.
-      // TODO - Handle non-local methods
-      case ap @ ApExprTyped(id, args, tpe, _) if TypeSystem.Function.arity(id.tpe) == args.length => applyFunction(id, args)
-      case ap @ ApExprTyped(id, args, tpe, _) => liftLambda(id, args, ap.pos)
-      case i: IdReferenceTyped =>
-        for {
-          idx <- localVarIndex(i.name)
-          _ <- idx match {
-            case Some(idx) => loadLocalVariable(i.tpe, idx)
-            case _ =>
-              // Here we assume any non-local variable reference is a local
-              // method call.
-              // TODO - Allow non-local method calls/referencing members.
-              // TODO - Lambda lift here
-              callStaticLocalMethod(i.name, 0, i.tpe)
-          }
-        } yield ()
+      // Here we handle all function/lambda calls directly.
 
+      // This is references an expression with no arguments, we just call the method to evaluate it.
+      case IdReferenceTyped(_, Location(s @ StaticMethod(_, _, Nil, _ )), _) => callStaticMethod(s)
+
+      // Here are straight up method calls with all known arguments
+      case ap @ ApExprTyped(IdReferenceTyped(_, Location(s @ StaticMethod(_, _, argTypes, _)), _), args, tpe, _) if argTypes.length == args.length =>
+        callStaticMethod(s)
+
+      // Here we look up method arguments
+      case IdReferenceTyped(name, Location(Argument), pos) =>
+          for {
+            idx <- localVarIndex(name)
+            _ <- idx match {
+              case Some(i) => loadLocalVariable(ast.tpe, i)
+              case None => sys.error(s"Unable to find argument [$name] when generating method bytecode at:\n$pos.longString}")
+            }
+          } yield ()
+
+      // Now we need to lift lambdas.  All built-in expressions should already have been handled.
+      // Note: we may be lifting built-in expressions into lambdas...
+      case ap @ ApExprTyped(id, args, tpe, _) => liftLambda(id, args, ap.pos)
+      case ref: IdReferenceTyped => liftLambda(ref, Nil, ref.pos)
   })
+
+
+  /** Will invoke a method defined in the current classfile, with the given type. */
+  //def callStaticLocalMethod(name: String, args: Int, tpe: Type) = State[MethodWriterState, Unit] { state =>
+  //  state.mv.visitMethodInsn(INVOKESTATIC, state.className, name, GenerateClassFiles.getFunctionSignature(tpe, args))
+ //   state -> ()
+ // }
   // TODO - Maybe create a new set of ASTs where we can lift lambdas prior to bytecode generation.
   import scala.util.parsing.input.Position
   def liftLambda(id: IdReferenceTyped, args: Seq[TypedAst], pos: Position): State[MethodWriterState, Unit] = {
@@ -351,6 +369,13 @@ object GenerateClassFiles {
         case _ => sys.error(s"Reached end of function signature type, but not end of argument count required! type: $f")
       }
     visitFunctionSignature(signature, tpe, args)
+    signature.toString
+  }
+
+  def getMethodSignature(args: Seq[Type], result: Type): String = {
+    val signature = new SignatureWriter()
+    args.foreach(arg => visitSignatureInternal(signature.visitParameterType, arg))
+    visitSignatureInternal(signature.visitReturnType(), result)
     signature.toString
   }
 

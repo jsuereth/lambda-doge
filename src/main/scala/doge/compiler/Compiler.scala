@@ -24,11 +24,9 @@ object Compiler {
   }
 
 
-  val builtInTypes = TypeSystem.dumbEnvironment(Map(
-    "Plus" -> TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer)),
-    "IS" -> idType,
-    "PrintLn" -> printlnType
-  ) ++
+  import types._
+  val builtInTypes = TypeEnv.dumbEnvironment(
+    Seq(TypeEnvironmentInfo("IS", BuiltIn, idType), TypeEnvironmentInfo("PrintLn", BuiltIn, printlnType)) ++
     // TODO - Some better semantic here.
     std.BuiltInType.all.typeTable)
 

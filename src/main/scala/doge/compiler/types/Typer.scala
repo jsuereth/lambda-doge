@@ -18,20 +18,20 @@ case class SyntaxTypeError(pos: Position, msg: String) extends Exception(
   * See the companion objects for access to type state internals.
   */
 case class TyperEnvironment(
-  env: Env,
+  env: TypeEnv,
   substitutions: Substitutions
 )
 object TyperEnvironment {
   type TyperState[A] = State[TyperEnvironment, A]
 
   /** Grabs the current type environment (scope) for the typer. */
-  def env: TyperState[Env] = State[TyperEnvironment, Env] { state => state -> state.env }
+  def env: TyperState[TypeEnv] = State[TyperEnvironment, TypeEnv] { state => state -> state.env }
   /** Grabs the current known variable refinements in the current typer run. */
   def substitutions: TyperState[Substitutions] = State[TyperEnvironment, Substitutions] { state => state -> state.substitutions }
   /** Adds term->type associations to the environment in this typer. */
-  def addEnvironment(types: (String, Type)*): TyperState[Unit] = State[TyperEnvironment, Unit] {
+  def addEnvironment(types: TypeEnvironmentInfo*): TyperState[Unit] = State[TyperEnvironment, Unit] {
     case x: TyperEnvironment =>
-      x.copy(env = x.env.withAdded(types:_*)) -> ()
+      x.copy(env = x.env.withLocal(types:_*)) -> ()
   }
   /** Adds refinements (type-variable => type) to the typer state in this environment. */
   def addSubstitutions(refines: Substitutions): TyperState[Unit] = State[TyperEnvironment, Unit] { state =>
@@ -57,7 +57,7 @@ object Typer {
 
   // Note:  Use typeAst for stateful version.
   // This starts with state set to the passed in environment.
-  def typeTree(ast: DogeAst, env: Env): TypedAst = {
+  def typeTree(ast: DogeAst, env: TypeEnv): TypedAst = {
     val typerRun =
       for {
         ast <- typeAst(ast)
@@ -70,7 +70,7 @@ object Typer {
 
   // Note:  Use typeAst for stateful version.
   // This starts with state set to the passed in environment.
-  def typeFull(m: Module, env: Env): ModuleTyped = {
+  def typeFull(m: Module, env: TypeEnv): ModuleTyped = {
     val typerRun =
       for {
         ast <- typeModule(m)
@@ -99,9 +99,11 @@ object Typer {
        for {
          lt <- typeLet(l)
          pl <- pruneAst(lt)
+         plt = pl.asInstanceOf[LetExprTyped] // TODO - Not so hacky
          _ <- clearSubstitutions
-         _ <- addEnvironment(lt.name -> pl.tpe)
-       } yield pl.asInstanceOf[LetExprTyped] // TODO - not so hacky
+         // Here we add the type information, and location (a static method on this module) to the typer environment.
+         _ <- addEnvironment(TypeEnvironmentInfo(lt.name, StaticMethod(module.name, plt.name, plt.argTypes, plt.returnType), pl.tpe))
+       } yield plt
     for {
       args <- module.definitions.toList.traverse[TyperState, LetExprTyped](typeLetAndExpose)
     } yield ModuleTyped(module.name, args)
@@ -165,15 +167,15 @@ object Typer {
     } else {
       // Complicated let is complicated.
       // Lambda is: name => (argNmaes curried) => definitioin type
-      val argToType: Map[String, Type] =
-        (ref.argNames.map(n => n -> newVariable))(collection.breakOut)
+      val argToType: Seq[TypeEnvironmentInfo] =
+        (ref.argNames.map(n => TypeEnvironmentInfo(n, Argument, newVariable)))
       // This constructs a functoin type using the variable argument types
       // and the resulting type of the expression.
       // Note: We attempt to prune variables after calling this.
       def makeFuncType(resultType: Type): Type = {
          ref.argNames.foldRight(resultType) { (argName, result) =>
-           val argType = argToType(argName)
-           Function(argType, result)
+           val argType = argToType.find(_.name == argName).get // TODO - possible huge error here...
+           Function(argType.tpe, result)
          }
       }
       for {
@@ -191,7 +193,7 @@ object Typer {
     def pruneRef(id: IdReferenceTyped): TyperState[IdReferenceTyped] = {
       for {
         tpe <- recursivePrune(id.tpe)
-      } yield IdReferenceTyped(id.name, tpe, id.pos)
+      } yield IdReferenceTyped(id.name, TypeEnvironmentInfo(id.env.name, id.env.location, tpe), id.pos)
     }
     def pruneAp(ap: ApExprTyped): TyperState[ApExprTyped] = {
       for {

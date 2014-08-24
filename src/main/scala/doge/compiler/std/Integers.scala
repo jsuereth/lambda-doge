@@ -4,7 +4,7 @@ package std
 import doge.compiler.backend.MethodWriterState
 import doge.compiler.std
 import doge.compiler.types.TypeSystem.Type
-import doge.compiler.types.{ApExprTyped, TypeSystem, TypedAst}
+import doge.compiler.types._
 import org.objectweb.asm.signature.SignatureVisitor
 import org.objectweb.asm.Opcodes._
 
@@ -19,12 +19,12 @@ object Integers extends BuiltInType {
   val MUL = "Multiply"
   val DIV = "Divide"
 
-  override val typeTable: Map[String, Type] =
-    Map(
-      PLUS -> TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer)),
-      MINUS -> TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer)),
-      MUL -> TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer)),
-      DIV -> TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer))
+  override val typeTable: Seq[TypeEnvironmentInfo] =
+    Seq(
+      TypeEnvironmentInfo(PLUS, BuiltIn, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer))),
+      TypeEnvironmentInfo(MINUS, BuiltIn, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer))),
+      TypeEnvironmentInfo(MUL, BuiltIn, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer))),
+      TypeEnvironmentInfo(DIV, BuiltIn, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer)))
     )
 
   override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
