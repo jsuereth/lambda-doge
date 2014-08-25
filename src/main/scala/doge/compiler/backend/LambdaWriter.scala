@@ -39,7 +39,6 @@ object LambdaWriter {
     classFile
   }
 
-
   def visitLambdaFields(writer: ClassWriter, args: Map[String, Type]) = {
     for((name, tpe) <- args)
       writer.visitField(ACC_PRIVATE, name, GenerateClassFiles.getFieldSignature(tpe), null, null)

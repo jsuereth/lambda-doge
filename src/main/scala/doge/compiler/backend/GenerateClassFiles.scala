@@ -1,6 +1,8 @@
 package doge.compiler
 package backend
 
+import java.lang.invoke.LambdaMetafactory
+
 import doge.compiler.std.BuiltInType
 import org.objectweb.asm.Opcodes._
 import org.objectweb.asm._
@@ -75,6 +77,10 @@ object MethodWriter {
       case _ => // Ignore, we are already boxed
     }
     mws -> ()
+  }
+
+  def className = State[MethodWriterState, String] { state =>
+    state -> state.className
   }
 
   def nextLambdaClassName = State[MethodWriterState, String] { state =>
@@ -220,6 +226,8 @@ object MethodWriter {
 
   /** Makes a closure method call, a.k.a against a closure instance */
   def callClosure(ap: ApExprTyped, argsToClosure: Int): State[MethodWriterState, Unit] = {
+    System.err.println(s"Generating closure call with $argsToClosure normal args and ${ap.args.size - argsToClosure} partially applied args.")
+    System.err.println(s"  expr = $ap")
     // Alg  - First we call all arguments up until we have a closure on the stack
     //        Second, we invokedynamic the apply method with remaiing unbound arguments.
     val realArgsToClosure = ap.args.take(argsToClosure)
@@ -227,13 +235,18 @@ object MethodWriter {
     val closureExpr = ApExprTyped(ap.name, realArgsToClosure, ap.name.tpe)
     val argsForClosure = ap.args.drop(argsToClosure)
     type MWS[A]=State[MethodWriterState, A]
+    // Helper method to pass each closure argument into the curried function.
+    def partiallyApply(arg: TypedAst): MWS[Unit] = {
+      for {
+        _ <-placeOnStack(arg)
+        _ <- box(arg.tpe)
+        _ <- rawInsn(_.visitMethodInsn(INVOKEINTERFACE, "java/util/function/Function", "apply", "(Ljava/lang/Object;)Ljava/lang/Object;"))
+      } yield ()
+    }
     for {
       _ <- placeOnStack(closureExpr)
-      _ <- argsForClosure.toList.traverse[MWS, Unit](placeOnStack)
-      // TODO - Figure out invoke dynamic... in particular
-      // It looks like we need some mechanism of looking up MethodHandles via a bootstrap method
-      // which we can then use in the invokeDynamic.
-    } yield  sys.error(s"Closure calls not implemented: $ap")
+      _ <- argsForClosure.toList.traverse[MWS, Unit](partiallyApply)
+    } yield  ()
   }
 
 
@@ -244,23 +257,51 @@ object MethodWriter {
  // }
   // TODO - Maybe create a new set of ASTs where we can lift lambdas prior to bytecode generation.
   import scala.util.parsing.input.Position
-  def liftClosure(id: IdReferenceTyped, args: Seq[TypedAst], pos: Position): State[MethodWriterState, Unit] = {
 
-    val writeLambdaClass = for {
-      name <- nextLambdaClassName
-      out <- classDirectory
-      source <- sourceFilename
-    } yield {
-      LambdaWriter.writeLambdaClass(id, args.map(_.tpe), name, source, out)
-      name
-    }
+  // Note this is hardcoded from laziness.
+  private val metaFactoryHandle: Handle =
+    new Handle(
+      Opcodes.H_INVOKESTATIC,
+      "java/lang/invoke/LambdaMetafactory",
+      "metafactory",
+      "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;")
+
+
+  // Here we use invokeDynamic and Java's metaFactoryHandle to lift a closure (with one captured arg)
+  // for the given method.
+  def liftClosure(id: IdReferenceTyped, args: Seq[TypedAst], pos: Position): State[MethodWriterState, Unit] = {
     type MWS[A] = State[MethodWriterState, A]
     for {
-      cn <- writeLambdaClass
-      _ <- rawInsn(_.visitTypeInsn(NEW, cn))
-      _ <- dupe
       _ <- args.toList.traverse[MWS, Unit](placeOnStack)
-      _ <- rawInsn(_.visitMethodInsn(INVOKESPECIAL, cn, "<init>", GenerateClassFiles.getMethodSignature(args.map(_.tpe), Unit)))
+      cn <- className
+      _ <- rawInsn { mv =>
+        // A method handle on the function we're lifting into a closure.
+        // TODO - make this more generic.
+        val delegateMethodHandle: Handle =
+          new Handle(
+            Opcodes.H_INVOKESTATIC,
+            cn,
+            id.name,
+            "(Ljava/lang/Object;)Ljava/lang/Object;")
+        // TODO - make these correect
+        val inputType = Type.getType("(Ljava/lang/Integer;)Ljava/lang/Integer;")
+        val outputType = Type.getType("(Ljava/lang/Integer;)Ljava/lang/Integer;")
+        val bootstrapArgs =
+          Array(inputType, delegateMethodHandle, outputType)
+        val bootStrapSignature =
+           s"${args.map(a => GenerateClassFiles.getFieldSignature(a.tpe)).mkString("(", "", ")")}Ljava/util/function/Function;"
+        // TODO - get actual method type
+        /*
+        mv.visitInvokeDynamicInsn(
+          "apply",
+          // TODO - Fix the signatures here.
+          bootStrapSignature,
+          metaFactoryHandle,
+          bootstrapArgs
+        );*/
+
+        // TODO - we may need to worry about the stack here, etc.
+      }
     } yield ()
   }
 
@@ -461,8 +502,15 @@ object GenerateClassFiles {
     BuiltInType.all.visitSignatureInternal.applyOrElse[(SignatureVisitor, Type), Unit]((signature, tpe), {
       case (sv, Unit) => signature.visitBaseType('V')
       // TODO - Don't hardcode the object string everywhere.
-      // TODO - Eventually, we may want some kind of interface for objects...
-      case (sv, f @ TypeSystem.Function(_, _)) => signature.visitClassType("java/lang/Object;")
+      // TODO - Eventually, we may want to show the generics.
+      case (sv, f @ TypeSystem.Function(arg, result)) =>
+
+        //signature.visitClassType("java/lang/Object;")
+        signature.visitClassType("java/util/function/Function;")
+        //visitSignatureInternal(signature.visitTypeArgument('='), arg, pos)
+        //visitSignatureInternal(signature.visitTypeArgument('='), result, pos)
+      // TODO - is it ok to handle variable types as just objects?
+      case _: TypeSystem.TypeVariable => signature.visitClassType("java/lang/Object;")
       case _ => sys.error(s"Unsupported argument/return type: [$tpe]${pos.map(_.longString).map("\n"+).getOrElse("")}")
     })
 

@@ -87,7 +87,9 @@ object TypeSystem {
   // meant to be referentially transparent, in creating a unique type variable that
   // is not the same as another.  The id itself should not matter for
   // correct execution.
-  def newVariable: TypeVariable = TypeVariable(_nextVariableId.getAndIncrement)
+  def newVariable: TypeVariable = {
+    TypeVariable(_nextVariableId.getAndIncrement)
+  }
 
 
 

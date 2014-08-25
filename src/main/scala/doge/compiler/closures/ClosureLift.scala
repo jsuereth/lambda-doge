@@ -70,6 +70,7 @@ object ClosureLift {
   def lift(l: LetExprTyped, moduleClassName: String): Seq[LetExprTyped] = {
     // TODO - super dirty evil impl, maybe have this be re-usable eventually)
     var additionalLets = Seq.empty[LetExprTyped]
+    // NOTE - There's an error here where argument types are erased somehow...
     def liftImpl(expr: TypedAst): TypedAst =
        expr match {
          // TODO - We may need to figure out a mechanism to handle unbound args which is slightly better...
@@ -78,6 +79,8 @@ object ClosureLift {
            val (allArgTypes, returnType) = deconstructArgs(ap.name.tpe)
            val liftedArgNames = allArgTypes.zipWithIndex.map(x => s"arg${x._2}" -> x._1)
            val lambdaMethodName = s"${l.name}$$lifted${additionalLets.size}"
+
+
            val lifted = LetExprTyped(lambdaMethodName, liftedArgNames.map(_._1),
              ApExprTyped(ap.name,
                for((name, tpe) <- liftedArgNames)
@@ -87,6 +90,11 @@ object ClosureLift {
              )
            , ap.name.tpe)
            additionalLets +:= lifted
+           // TODO - We actually need to create N methods here, one for each unbound/curried argument.
+           // Each method will be lifted into a Function<?,?> object directly and call the next.
+           // i.e. manual currying.
+           val unboundArgCount = allArgTypes.size - ap.args.size
+
            ApExprTyped(
              IdReferenceTyped(lambdaMethodName, TypeEnvironmentInfo(lambdaMethodName, StaticMethod(moduleClassName, lambdaMethodName, allArgTypes, returnType), ap.name.tpe)),
              ap.args.map(liftImpl),

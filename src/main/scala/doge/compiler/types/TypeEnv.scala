@@ -8,6 +8,12 @@ import TypeSystem.Type
 trait TypeEnv {
   def lookup(name: String): TypeEnvironmentInfo
   def withLocal(types: TypeEnvironmentInfo*): TypeEnv
+
+  /** Removes these names from the type environment (e.g. leaving scope).
+    *
+    * TODO - maybe push/pop semantics are easier...
+    */
+  def clear(names: Seq[String]): TypeEnv
 }
 
 /** An enumeration for possible locations/encodings of named expressions.
@@ -60,6 +66,9 @@ object TypeEnv {
     }
     override def withLocal(types: TypeEnvironmentInfo*): TypeEnv = {
       dumbEnvironment(initial ++ types)
+    }
+    override def clear(names: Seq[String]): TypeEnv = {
+      dumbEnvironment(initial.filterNot(e => names.contains(e.name)))
     }
   }
 }

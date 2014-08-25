@@ -33,6 +33,11 @@ object TyperEnvironment {
     case x: TyperEnvironment =>
       x.copy(env = x.env.withLocal(types:_*)) -> ()
   }
+  def clearEnvironment(types: TypeEnvironmentInfo*): TyperState[Unit] = State[TyperEnvironment, Unit] { state =>
+    val env2 = state.env.clear(types.map(_.name))
+    state.copy(env = env2) -> ()
+  }
+
   /** Adds refinements (type-variable => type) to the typer state in this environment. */
   def addSubstitutions(refines: Substitutions): TyperState[Unit] = State[TyperEnvironment, Unit] { state =>
     (state.copy(substitutions = state.substitutions ++ refines), ())
@@ -71,18 +76,13 @@ object Typer {
   // Note:  Use typeAst for stateful version.
   // This starts with state set to the passed in environment.
   def typeFull(m: Module, env: TypeEnv): ModuleTyped = {
-    val typerRun =
-      for {
-        ast <- typeModule(m)
-        cleaned <- pruneAst(ast)
-      } yield cleaned.asInstanceOf[ModuleTyped] // TODO - lame hack
-    val (_, result) = typerRun(TyperEnvironment(env, Map.empty))
+    val (_, result) = typeModule(m)(TyperEnvironment(env, Map.empty))
     result
   }
 
 
   /** Will compute the type for a given AST. */
-  def typeAst(ref: DogeAst): TyperState[TypedAst] =
+  def typeAst(ref: DogeAst): TyperState[TypedAst] = {
     // Hacky casts for variance, yay dawg.  We could also just map(x => x).
     ref match {
       case id: IdReference => typeIdReference(id).asInstanceOf[TyperState[TypedAst]]
@@ -92,6 +92,7 @@ object Typer {
       case let: LetExpr => typeLet(let).asInstanceOf[TyperState[TypedAst]]
       case m: Module => typeModule(m).asInstanceOf[TyperState[TypedAst]]
     }
+  }
 
   /** Types a complete module definition, including sharing let expressions. */
   def typeModule(module: ast.Module): TyperState[ModuleTyped] = {
@@ -102,7 +103,7 @@ object Typer {
          plt = pl.asInstanceOf[LetExprTyped] // TODO - Not so hacky
          _ <- clearSubstitutions
          // Here we add the type information, and location (a static method on this module) to the typer environment.
-         _ <- addEnvironment(TypeEnvironmentInfo(lt.name, StaticMethod(module.name, plt.name, plt.argTypes, plt.returnType), pl.tpe))
+         _ <- addEnvironment(TypeEnvironmentInfo(plt.name, StaticMethod(module.name, plt.name, plt.argTypes, plt.returnType), pl.tpe))
        } yield plt
     for {
       args <- module.definitions.toList.traverse[TyperState, LetExprTyped](typeLetAndExpose)
@@ -129,8 +130,8 @@ object Typer {
     */
   private def makeFuncForRefinement(argTypes: Seq[TypedAst]): Type = {
     val resultType = newVariable
-    argTypes.foldRight[Type](resultType) { (prev, result) =>
-      Function(prev.tpe, result)
+    argTypes.foldRight[Type](resultType) { (arg, result) =>
+      Function(arg.tpe, result)
     }
   }
 
@@ -169,19 +170,14 @@ object Typer {
       // Lambda is: name => (argNmaes curried) => definitioin type
       val argToType: Seq[TypeEnvironmentInfo] =
         (ref.argNames.map(n => TypeEnvironmentInfo(n, Argument, newVariable)))
-      // This constructs a functoin type using the variable argument types
-      // and the resulting type of the expression.
-      // Note: We attempt to prune variables after calling this.
-      def makeFuncType(resultType: Type): Type = {
-         ref.argNames.foldRight(resultType) { (argName, result) =>
-           val argType = argToType.find(_.name == argName).get // TODO - possible huge error here...
-           Function(argType.tpe, result)
-         }
-      }
+      val argTypes = argToType.map(_.tpe)
       for {
         _ <- addEnvironment(argToType.toSeq:_*)
         resultAst <- typeAst(ref.definition)
-      } yield LetExprTyped(ref.name, ref.argNames, resultAst, makeFuncType(resultAst.tpe), ref.pos)
+        pargs <- argTypes.toList.traverse[TyperState, Type](recursivePrune)
+        rtpe <- recursivePrune(resultAst.tpe)
+        _ <- clearEnvironment(argToType.toSeq:_*)
+      } yield LetExprTyped(ref.name, ref.argNames, resultAst, FunctionN(rtpe, pargs:_*), ref.pos)
     }
   }
 
@@ -263,7 +259,8 @@ object Typer {
       */
     def substitute(v: TypeVariable, t: Type) = State[TyperEnvironment, Type] { state =>
       if(v != t) {
-        state.copy(substitutions = state.substitutions + (v.id -> t)) -> t
+        val result = state.substitutions + (v.id -> t)
+        state.copy(substitutions = result) -> t
       } else state -> t
     }
     for {
