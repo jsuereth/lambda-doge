@@ -4,6 +4,7 @@ import java.io.File
 
 import doge.compiler.ast.{LetExpr, DogeAst}
 import doge.compiler.backend.GenerateClassFiles
+import doge.compiler.closures.ClosureLift
 import doge.compiler.types._
 
 object Compiler {
@@ -46,6 +47,8 @@ object Compiler {
     log(s"  -- Parsed --\n${parsed}")
     val typed = Typer.typeFull(parsed, builtInTypes)
     log(s"  -- Typed--\n${typed}")
+    val closured = ClosureLift.liftClosures(typed)
+    log(s"  -- Closure-Lifted --\n${closured}")
     val clsFile = GenerateClassFiles.makeClassfile(typed, classDirectory)
     clsFile
   }

@@ -1,7 +1,20 @@
 WOW
-lambdaOne
+closureOne
 SO x
 MUCH Plus x!
+
+WOW
+makeClosureOne
+MUCH closureOne 1!
+
+WOW
+callClosureOne
+MUCH makeClosureOne 1!
+
+
+WOW
+callClosureOneDuex
+MUCH closureOne 1 2!
 
 
 WOW

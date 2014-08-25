@@ -145,6 +145,23 @@ object MethodWriter {
     state -> ()
   }
 
+  object ClosureReference {
+    import TypeSystem._
+    def unapply(id: IdReferenceTyped): Option[Int] = {
+      id.env.location match {
+        case LocalField(_, _, Function(_,_)) => Some(0)
+        case StaticMethod(_, _, args, Function(_,_)) =>  Some(args.size)
+        case _ => None
+      }
+    }
+  }
+  object ClosureCall {
+    def unapply(ast: TypedAst): Option[(ApExprTyped, Int)] = ast match {
+      case ap @ ApExprTyped(ClosureReference(argCount), args, _, _) if args.size > argCount => Some(ap, argCount)
+      case _ => None
+    }
+  }
+
   /** Places the result of an Ast expression onto the JVM stack.
     *
     * Note: This will either:
@@ -156,38 +173,68 @@ object MethodWriter {
     * @return
     */
   def placeOnStack(ast: TypedAst): State[MethodWriterState, Unit] = BuiltInType.all.backend.applyOrElse[TypedAst, State[MethodWriterState, Unit]](ast, {
+      //  Literals are easiest to encode.
       case i: IntLiteralTyped => loadConstant(new java.lang.Integer(i.value))
       case b: BoolLiteralTyped => loadConstant(new java.lang.Boolean(b.value))
       // TODO - how to handle id references?
       // TODO - move these into builtins...
       case ApExprTyped(i, Seq(id), _, _) if i.name == "IS" => placeOnStack(id)
       case ApExprTyped(id, args, _, _) if id.name == "PrintLn" => builtInFunctions.println(args)
-      // Here we handle all function/lambda calls directly.
+
+
+      // Now we handle simple "reference" type lookups.
 
       // This is references an expression with no arguments, we just call the method to evaluate it.
       case IdReferenceTyped(_, Location(s @ StaticMethod(_, _, Nil, _ )), _) => callStaticMethod(s)
       // we're inside a lambda class, and we can just grab a locally captured field.
       case IdReferenceTyped(_, Location(s : LocalField), _) => getLocalField(s)
-
-      // Here are straight up method calls with all known arguments
-      case ap @ ApExprTyped(IdReferenceTyped(_, Location(s @ StaticMethod(_, _, argTypes, _)), _), args, tpe, _) if argTypes.length == args.length =>
-        callStaticMethod(s)
-
       // Here we look up method arguments
       case IdReferenceTyped(name, Location(Argument), pos) =>
-          for {
-            idx <- localVarIndex(name)
-            _ <- idx match {
-              case Some(i) => loadLocalVariable(ast.tpe, i)
-              case None => sys.error(s"Unable to find argument [$name] when generating method bytecode at:\n$pos.longString}")
-            }
-          } yield ()
+        for {
+          idx <- localVarIndex(name)
+          _ <- idx match {
+            case Some(i) => loadLocalVariable(ast.tpe, i)
+            case None => sys.error(s"Unable to find argument [$name] when generating method bytecode at:\n$pos.longString}")
+          }
+        } yield ()
 
-      // Now we need to lift lambdas.  All built-in expressions should already have been handled.
-      // Note: we may be lifting built-in expressions into lambdas...
-      case ap @ ApExprTyped(id, args, tpe, _) => liftLambda(id, args, ap.pos)
-      case ref: IdReferenceTyped => liftLambda(ref, Nil, ref.pos)
+
+      // Now we have special treatment for Lambda calls.
+      // TODO - Catch lambda-applications
+      case ClosureCall(ap, argsToClosure) => callClosure(ap, argsToClosure)
+
+
+
+
+      // Here are straight up method calls with all known arguments.
+      case ap @ ApExprTyped(IdReferenceTyped(_, Location(s @ StaticMethod(_, _, argTypes, _)), _), args, tpe, _) if argTypes.length == args.length => callStaticMethod(s)
+
+      // Now we need to lift closures.  All built-in expressions should already have been handled.
+      // Note: we may be lifting built-in expressions into closures...
+      case ap @ ApExprTyped(id, args, tpe, _) => liftClosure(id, args, ap.pos)
+
+      //case ref: IdReferenceTyped => liftLambda(ref, Nil, ref.pos)
+      case _ => sys.error(s"Unable to handle ast: $ast")
   })
+
+
+  /** Makes a closure method call, a.k.a against a closure instance */
+  def callClosure(ap: ApExprTyped, argsToClosure: Int): State[MethodWriterState, Unit] = {
+    // Alg  - First we call all arguments up until we have a closure on the stack
+    //        Second, we invokedynamic the apply method with remaiing unbound arguments.
+    val realArgsToClosure = ap.args.take(argsToClosure)
+    // TOOD - Don't hardcode a bad type here.
+    val closureExpr = ApExprTyped(ap.name, realArgsToClosure, ap.name.tpe)
+    val argsForClosure = ap.args.drop(argsToClosure)
+    type MWS[A]=State[MethodWriterState, A]
+    for {
+      _ <- placeOnStack(closureExpr)
+      _ <- argsForClosure.toList.traverse[MWS, Unit](placeOnStack)
+      // TODO - Figure out invoke dynamic... in particular
+      // It looks like we need some mechanism of looking up MethodHandles via a bootstrap method
+      // which we can then use in the invokeDynamic.
+    } yield  sys.error(s"Closure calls not implemented: $ap")
+  }
 
 
   /** Will invoke a method defined in the current classfile, with the given type. */
@@ -197,7 +244,7 @@ object MethodWriter {
  // }
   // TODO - Maybe create a new set of ASTs where we can lift lambdas prior to bytecode generation.
   import scala.util.parsing.input.Position
-  def liftLambda(id: IdReferenceTyped, args: Seq[TypedAst], pos: Position): State[MethodWriterState, Unit] = {
+  def liftClosure(id: IdReferenceTyped, args: Seq[TypedAst], pos: Position): State[MethodWriterState, Unit] = {
 
     val writeLambdaClass = for {
       name <- nextLambdaClassName

@@ -99,7 +99,6 @@ object LambdaWriter {
     val unboundArgLookup =
       unboundArgAsts.map(_.name).zipWithIndex.map { case(name, idx) => (name, idx+1)}.toMap
     val state = MethodWriterState(className, mv, unboundArgLookup, APPLY_METHOD_NAME, 0, target)
-    System.err.println(s"Attempting to write lambda $className = $defn")
     MethodWriter.writeMethod(defn)(state)
   }
 
