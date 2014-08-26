@@ -1,17 +1,18 @@
 package doge.compiler.ast
 
 
+import doge.compiler.types.TypeSystem
+
 import scala.util.parsing.input.Positional
 
 
 // Bare minimum
 sealed abstract class DogeAst extends Positional
 
-case class LetExpr(name: String, types: Seq[String], argNames: Seq[String], definition: DogeAst) extends DogeAst {
+case class LetExpr(name: String, types: Option[TypeSystem.Type], argNames: Seq[String], definition: DogeAst) extends DogeAst {
   private def argList =
-    if(!types.isEmpty) for((name, tpe) <- argNames zip types) yield s"$name: $tpe"
-    else argNames map (n => s"$n: ???")
-  override def toString = s"let $name(${argList.mkString(", ")}) = $definition"
+    argNames map (n => s"$n: ???")
+  override def toString = s"let $name(${argList.mkString(", ")}): $types = $definition"
 }
 case class ApExpr(name: IdReference, args: Seq[DogeAst]) extends DogeAst {
   override def toString =

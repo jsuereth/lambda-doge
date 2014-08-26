@@ -26,8 +26,28 @@ class TyperSpec extends Specification { def is = s2"""
       unify method application                        $unifyApplication
       unify let expressions                           $unifyLet
       bind let expressions inside modules             $bindLetExpressionsInModules
+      fail on specified type mismatch                 $failOnSpecifiedTypeMisMatch
+      type with specified types                       $useTypesSpecified
                                                       """
 
+  def failOnSpecifiedTypeMisMatch = {
+    LetExpr("bad", Some(Integer), Nil, ApExpr(IdReference("plus"), Seq(IntLiteral(1)))) must not(typeCheck)
+  }
+
+  def useTypesSpecified = {
+    LetExpr("specified", Some(Function(Integer, Integer)), Seq("a"), ApExpr(IdReference("is"), Seq(IdReference("a")))) must
+      typeAs(
+        LetExprTyped(
+          name = "specified",
+          argNames = Seq("a"),
+          definition = ApExprTyped(
+            name = IdReferenceTyped("is", TypeEnvironmentInfo("is", BuiltIn, Function(Integer, Integer))),
+            args = Seq(IdReferenceTyped("a", TypeEnvironmentInfo("a", Argument, Integer))),
+            tpe = Integer
+          ),
+          tpe = Function(Integer, Integer))
+      )
+  }
 
   def listError = {
     ApExpr(IdReference("cons"), Seq(IntLiteral(1), BoolLiteral(true))) must not(typeCheck)
@@ -59,7 +79,7 @@ class TyperSpec extends Specification { def is = s2"""
                          tpe = Function(Integer, Integer)))
 
   def handlePartialApply =
-    LetExpr("liftMe", Nil, Seq("a"), ApExpr(IdReference("plus"), Seq(IdReference("a")))) must
+    LetExpr("liftMe", None, Seq("a"), ApExpr(IdReference("plus"), Seq(IdReference("a")))) must
       typeAs(
         LetExprTyped(
           name = "liftMe",
@@ -75,7 +95,7 @@ class TyperSpec extends Specification { def is = s2"""
   // TODO - handle nested apply
 
   def unifyLet =
-     LetExpr("plusOne", Nil, Seq("x"),
+     LetExpr("plusOne", None, Seq("x"),
        ApExpr(IdReference("plus"), Seq(IdReference("x"), IntLiteral(1)))
      ) must typeAs(
         LetExprTyped(
@@ -93,8 +113,8 @@ class TyperSpec extends Specification { def is = s2"""
     Module(
       "test",
        Seq(
-        LetExpr("liftMe", Nil, Seq("a"), ApExpr(IdReference("plus"), Seq(IdReference("a")))),
-        LetExpr("liftMe2", Nil, Seq("b"), ApExpr(IdReference("liftMe"), Seq(IdReference("b"))))
+        LetExpr("liftMe", None, Seq("a"), ApExpr(IdReference("plus"), Seq(IdReference("a")))),
+        LetExpr("liftMe2", None, Seq("b"), ApExpr(IdReference("liftMe"), Seq(IdReference("b"))))
        )
     ) must typeAs(
       ModuleTyped(
@@ -131,7 +151,7 @@ class TyperSpec extends Specification { def is = s2"""
   def handleMultiApplyBindIssue =
     Module("test",
       Seq(
-        LetExpr("Big", Nil, Seq("a", "b", "c", "d"),
+        LetExpr("Big", None, Seq("a", "b", "c", "d"),
           ApExpr(IdReference("plus"), Seq(
             IdReference("a"),
             ApExpr(IdReference("plus"),
@@ -142,7 +162,7 @@ class TyperSpec extends Specification { def is = s2"""
             )
           ))
         ),
-        LetExpr("other", Nil, Seq("a", "b"), ApExpr(IdReference("plus"), Seq(IdReference("a"), IdReference("b"))))
+        LetExpr("other", None, Seq("a", "b"), ApExpr(IdReference("plus"), Seq(IdReference("a"), IdReference("b"))))
       )
     ) must typeAs(
       ModuleTyped(
@@ -200,6 +220,7 @@ class TyperSpec extends Specification { def is = s2"""
       }
       catch {
         case t: TypeError => failure(s"Expected $tree got error: $t", tree)
+        case t: SyntaxTypeError => failure(s"Expected $tree got error: $t", tree)
       }
     }
   }
@@ -214,6 +235,7 @@ class TyperSpec extends Specification { def is = s2"""
       }
       catch {
         case t: TypeError => failure(s"Expected $tree got error: $t", tree)
+        case t: SyntaxTypeError => failure(s"Expected $tree got error: $t", tree)
       }
     }
   }

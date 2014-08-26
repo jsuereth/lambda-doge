@@ -160,25 +160,35 @@ object Typer {
    * Will type a let tree.  Does not add the let types into the state when complete.
    */
   private def typeLet(ref: LetExpr): TyperState[LetExprTyped] = {
-    if(ref.argNames.isEmpty) {
-      // Simple let is just a name assigned to an expression
-      for {
-        result <- typeAst(ref.definition)
-      } yield LetExprTyped(ref.name, Nil, result, result.tpe, ref.pos)
-    } else {
-      // Complicated let is complicated.
-      // Lambda is: name => (argNmaes curried) => definitioin type
-      val argToType: Seq[TypeEnvironmentInfo] =
-        (ref.argNames.map(n => TypeEnvironmentInfo(n, Argument, newVariable)))
-      val argTypes = argToType.map(_.tpe)
-      for {
-        _ <- addEnvironment(argToType.toSeq:_*)
-        resultAst <- typeAst(ref.definition)
-        pargs <- argTypes.toList.traverse[TyperState, Type](recursivePrune)
-        rtpe <- recursivePrune(resultAst.tpe)
-        _ <- clearEnvironment(argToType.toSeq:_*)
-      } yield LetExprTyped(ref.name, ref.argNames, resultAst, FunctionN(rtpe, pargs:_*), ref.pos)
+    val argToType: Seq[TypeEnvironmentInfo] =
+      ref.types match {
+        case Some(tpe) =>
+          val (argTypes, _) = Function.deconstructArgs(tpe)(ref.argNames.size)
+          ref.argNames.zip(argTypes).map{ case (n,tpe) => TypeEnvironmentInfo(n, Argument, tpe)}
+        case None =>
+          (ref.argNames.map(n => TypeEnvironmentInfo(n, Argument, newVariable)))
+      }
+    val argTypes = argToType.map(_.tpe)
+    // This will run a unify of the specified result type AND the detected result type to ensure
+    // we close the loop on known types.
+    def unifyKnownResultType(detected: Type): TyperState[Type] = {
+      ref.types match {
+        case Some(tpe) =>
+          val (_, given) = Function.deconstructArgs(tpe)(ref.argNames.size)
+          unify(detected, given, ref.pos)
+        case None => withState(detected)
+      }
     }
+    // TODO - If we know our own type, we can add ourselves to the type environment, in case there is recursion.
+    for {
+      _ <- addEnvironment(argToType.toSeq:_*)
+      resultAst <- typeAst(ref.definition)
+      urtpe <- unifyKnownResultType(resultAst.tpe)
+      // After all unification is complete, then we can prune
+      pargs <- argTypes.toList.traverse[TyperState, Type](recursivePrune)
+      rtpe <- recursivePrune(urtpe)
+      _ <- clearEnvironment(argToType.toSeq:_*)
+    } yield LetExprTyped(ref.name, ref.argNames, resultAst, FunctionN(rtpe, pargs:_*), ref.pos)
   }
 
   /** Prunes type variables out of the ast using the typer state.

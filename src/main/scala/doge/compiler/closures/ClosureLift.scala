@@ -149,23 +149,8 @@ object ClosureLift {
   // Here we need to:
   // 1. Figure out all unbound argument tpyes and name them in the apply method.
   // 2. Find a way to encode all bound variables as AST nodes when we feed to existing classfile generation code.
-  def deconstructArgs(tpe: Type): (Seq[Type], Type) = {
-    def deconstructArgs(argList: Seq[Type], nextFunc: Type): Seq[Type] = nextFunc match {
-      case Function(arg, next) => deconstructArgs(argList :+ arg, next)
-      case result => argList :+ result
-    }
-    val all = deconstructArgs(Nil, tpe)
-    (all.init, all.last)
-  }
+  def deconstructArgs(tpe: Type): (Seq[Type], Type) = Function.deconstructArgs(tpe)()
 
   // Similar to above, but with a limited amount of deconstruction.
-  def deconstructArgs(tpe: Type, args: Int): (Seq[Type], Type) = {
-    def deconstructArgs(argList: Seq[Type], nextFunc: Type, remaining: Int): Seq[Type] = nextFunc match {
-      case Function(arg, next) if remaining > 0 => deconstructArgs(argList :+ arg, next, remaining -1)
-      case result => argList :+ result
-    }
-    val all = deconstructArgs(Nil, tpe, args)
-    (all.init, all.last)
-  }
-
+  def deconstructArgs(tpe: Type, args: Int): (Seq[Type], Type) = Function.deconstructArgs(tpe)(args)
 }

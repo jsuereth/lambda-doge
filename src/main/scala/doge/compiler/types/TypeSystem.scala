@@ -74,6 +74,16 @@ object TypeSystem {
       case Function(l, r) => 1 + arity(r)
       case _ => 0
     }
+
+    // Similar to above, but with a limited amount of deconstruction.
+    def deconstructArgs(tpe: Type)(args: Int = arity(tpe)): (Seq[Type], Type) = {
+      def deconstructArgs(argList: Seq[Type], nextFunc: Type, remaining: Int): Seq[Type] = nextFunc match {
+        case Function(arg, next) if remaining > 0 => deconstructArgs(argList :+ arg, next, remaining -1)
+        case result => argList :+ result
+      }
+      val all = deconstructArgs(Nil, tpe, args)
+      (all.init, all.last)
+    }
   }
   def FunctionN(to: Type, from: Type*): Type =
     from match {

@@ -1,5 +1,6 @@
 package doge.compiler.parser
 
+import doge.compiler.types.TypeSystem
 import org.specs2._
 import DogeParser._
 import doge.compiler.ast._
@@ -15,8 +16,18 @@ class ParserSpec extends Specification { def is = s2"""
       parse identifiers                              $parseIdentifiers
       parse application                              $parseApplication
       parse let                                      $parseLet
+      parse concrete types                           $parseConcreteTypes
+      parse type constructors                        $parseTypeConstructors
+      parse function types                           $parseFunctionTypes
                                                         """
 
+  def parseConcreteTypes =
+    "Int" must parseAs(typeParser, TypeSystem.Integer)
+  def parseTypeConstructors =
+    "List[Int]" must parseAs(typeParser, TypeSystem.TypeConstructor("List", Seq(TypeSystem.Integer)))
+
+  def parseFunctionTypes =
+    "List[Int] => Unit" must parseAs(typeParser, TypeSystem.Function(TypeSystem.TypeConstructor("List", Seq(TypeSystem.Integer)), TypeSystem.Unit))
   def parseIntLiterals = {
     "5" must parseAs(intLiteral, IntLiteral(5))
   }
@@ -39,7 +50,7 @@ class ParserSpec extends Specification { def is = s2"""
   def parseLet = {
     "WOW PlusOne SO numbers VERY Plus numbers 1!" must parseAs(letExpr, LetExpr(
       "PlusOne",
-       types = Seq(),
+       types = None,
        argNames = Seq("numbers"),
        definition = ApExpr(IdReference("Plus"), Seq(IdReference("numbers"), IntLiteral(1)))
     ))

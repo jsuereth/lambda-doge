@@ -102,8 +102,8 @@ object DogeParser extends RegexParsers {
 
 
   lazy val letExpr: Parser[LetExpr] =
-    positioned(WOW ~ id ~ opt(typeList) ~ opt(argList) ~ apExpr ^^ {
-       case ignore ~ id ~ types ~ args ~ result => LetExpr(id, types.getOrElse(Nil), args.getOrElse(Nil), result)
+    positioned(WOW ~ id ~ opt(typeParser) ~ opt(argList) ~ apExpr ^^ {
+       case ignore ~ id ~ tpe ~ args ~ result => LetExpr(id, tpe, args.getOrElse(Nil), result)
      })
   lazy val apExpr: Parser[ApExpr] =
     positioned((((MANY | VERY | MUCH) ~> idRef ) ~ rep(expr) <~ EXCL) ^^ {
