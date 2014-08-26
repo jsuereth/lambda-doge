@@ -15,7 +15,13 @@ Any whitespace acts as a token delimiter.
     application-expr := (MANY | VERY | MUCH) <application> !
     expr := (<let-expr> | <application-expr> | <literal> | <id>)
     type-declr := SUCH <type>
-    type := ??? TODO ???
+    type := (<typeFunction> | <rawType>)
+    typeFunction := <rawType> => <type>
+    rawType := grouped | typeVar | typeConstructor
+    grouped := ( <type> )
+    typeConstructor := typeId ( "[" type* "]" )?
+    typeVar := <lower-case-id>
+    typeId := <not-all-lower-case-id>
 
 Examples:
 
@@ -47,8 +53,7 @@ Expected execution output:
 ### Parser TODOs
 
 * Refined the AST so we get better positions on type errors.
-* More literal types (e.g. String, Lambda)
-* Semantics for explicit type declaration
+* More literals (e.g. String, Lambda)
 * Pattern matching
 
 ## Type System

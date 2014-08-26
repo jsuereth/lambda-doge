@@ -65,7 +65,7 @@ object DogeParser extends RegexParsers {
     (grouped | typeVar | typeConstructor)
 
   lazy val typeConstructor: Parser[TypeCons] =
-     typeId ~ opt("[" ~> typeRaw.* <~ "]") ^^ {
+     typeId ~ opt("[" ~> typeFull.* <~ "]") ^^ {
        case id ~ args => TypeCons(id, args.getOrElse(Nil))
      }
   lazy val grouped: Parser[ParseTypeAst] = "(" ~> typeFull <~ ")"
