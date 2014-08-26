@@ -50,6 +50,6 @@ case class IdReferenceTyped(name: String, env: TypeEnvironmentInfo, pos: Positio
 case class ModuleTyped(name: String, definitions: Seq[LetExprTyped]) extends TypedAst {
   override val tpe = TypeSystem.Unit
   override val pos = NoPosition
-  override def toString = s"module $name {${definitions.mkString("\n  ","\n  ", "\n")}}"
+  override def toString = s"module $name {${definitions.mkString("\n  ","\n\n  ", "\n")}}"
 }
 

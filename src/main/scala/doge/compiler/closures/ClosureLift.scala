@@ -10,6 +10,8 @@ import doge.compiler.types._
  * i.e. any built-in function is automatically encoded
  * in a local method which can be lifted.
  *
+ * This handles not just partially applied methods, it (TBD) handles closure syntax.
+ *
  * In the future, this should also ensure that any legitimate closures
  * are lifted.
  */
@@ -56,6 +58,13 @@ object ClosureLift {
       case _ => None
     }
   }
+
+  object PartialApplicationMoreThanOneArg {
+    def unapply(ast: TypedAst): Option[(ApExprTyped)] = ast match {
+      case ap@ApExprTyped(MethodReferenceType(FunctionArgCount(argCount)), args, _, _) if args.size + 1 < argCount => Some(ap)
+      case _ => None
+    }
+  }
   object IsBuiltIn {
     def unapply(ast: TypedAst): Boolean =
       ast match {
@@ -70,33 +79,61 @@ object ClosureLift {
   def lift(l: LetExprTyped, moduleClassName: String): Seq[LetExprTyped] = {
     // TODO - super dirty evil impl, maybe have this be re-usable eventually)
     var additionalLets = Seq.empty[LetExprTyped]
+    val newMethodCount = new java.util.concurrent.atomic.AtomicLong(0L)
+    def makeMethodName(n: String): String =
+      s"${n}$$lambda$$${newMethodCount.getAndIncrement}"
+    val newCurriedCount = new java.util.concurrent.atomic.AtomicLong(0L)
+    def makeCurriedMethodName(n: String): String =
+      s"${n}$$curied$$${newCurriedCount.getAndIncrement}"
+
     // NOTE - There's an error here where argument types are erased somehow...
     def liftImpl(expr: TypedAst): TypedAst =
        expr match {
-         // TODO - We may need to figure out a mechanism to handle unbound args which is slightly better...
+         // If we have a partial application of a built-in method, we need to construct
+         // a raw method which we can lift.
          case PartialApplication(ap @ IsBuiltIn()) =>
            // NOTE - Remember to recurse into methods
            val (allArgTypes, returnType) = deconstructArgs(ap.name.tpe)
            val liftedArgNames = allArgTypes.zipWithIndex.map(x => s"arg${x._2}" -> x._1)
-           val lambdaMethodName = s"${l.name}$$lifted${additionalLets.size}"
-
-
-           val lifted = LetExprTyped(lambdaMethodName, liftedArgNames.map(_._1),
-             ApExprTyped(ap.name,
-               for((name, tpe) <- liftedArgNames)
-               yield IdReferenceTyped(name, TypeEnvironmentInfo(name, Argument, tpe)),
-               returnType,
-               ap.pos
-             )
-           , ap.name.tpe)
-           additionalLets +:= lifted
-           // TODO - We actually need to create N methods here, one for each unbound/curried argument.
-           // Each method will be lifted into a Function<?,?> object directly and call the next.
-           // i.e. manual currying.
-           val unboundArgCount = allArgTypes.size - ap.args.size
-
-           ApExprTyped(
+           val lambdaMethodName = makeMethodName(l.name)
+           // The underlying lambda we're lifting.
+           val liftedZero = {
+             LetExprTyped(lambdaMethodName, liftedArgNames.map(_._1),
+               ApExprTyped(ap.name,
+                 for((name, tpe) <- liftedArgNames)
+                 yield IdReferenceTyped(name, TypeEnvironmentInfo(name, Argument, tpe)),
+                 returnType,
+                 ap.pos
+               )
+               , ap.name.tpe)
+           }
+           additionalLets = liftedZero +: additionalLets
+           // Now we lift this non-built-in partial application into helper lambdas recursively.
+           liftImpl(ApExprTyped(
              IdReferenceTyped(lambdaMethodName, TypeEnvironmentInfo(lambdaMethodName, StaticMethod(moduleClassName, lambdaMethodName, allArgTypes, returnType), ap.name.tpe)),
+             ap.args.map(liftImpl),
+             ap.tpe))
+         // We only need to lift if the partial application is more than one extra method.
+         case PartialApplicationMoreThanOneArg(ap) =>
+           // TODO - Peel of one argyent, and lift.
+           val newArgLength = ap.args.length + 1
+           val (allArgTypes, resultType) = deconstructArgs(ap.name.tpe, newArgLength)
+           val newMethodName = makeCurriedMethodName(l.name)
+           val newArgList = allArgTypes.zipWithIndex.map(x => s"arg${x._2}" -> x._1)
+
+           val liftedDelegate = {
+             LetExprTyped(newMethodName, newArgList.map(_._1),
+               ApExprTyped(ap.name,
+                 for((name, tpe) <- newArgList)
+                 yield IdReferenceTyped(name, TypeEnvironmentInfo(name, Argument, tpe)),
+                 resultType,  // TODO - fix this?
+                 ap.pos
+               ), ap.name.tpe)
+           }
+           additionalLets = liftImpl(liftedDelegate).asInstanceOf[LetExprTyped] +: additionalLets
+           // TODO - figure out the type of the new function...
+           ApExprTyped(
+             IdReferenceTyped(newMethodName, TypeEnvironmentInfo(newMethodName, StaticMethod(moduleClassName, newMethodName, allArgTypes, resultType), ap.name.tpe)),
              ap.args.map(liftImpl),
              ap.tpe)
          case ApExprTyped(name, args, tpe, pos) => ApExprTyped(name, args.map(liftImpl), tpe, pos)
@@ -105,11 +142,11 @@ object ClosureLift {
        }
 
     val result = liftImpl(l).asInstanceOf[LetExprTyped]
-    additionalLets :+ result
+    result +: additionalLets
   }
 
 
-  // TODO - here we need to:
+  // Here we need to:
   // 1. Figure out all unbound argument tpyes and name them in the apply method.
   // 2. Find a way to encode all bound variables as AST nodes when we feed to existing classfile generation code.
   def deconstructArgs(tpe: Type): (Seq[Type], Type) = {
@@ -118,6 +155,16 @@ object ClosureLift {
       case result => argList :+ result
     }
     val all = deconstructArgs(Nil, tpe)
+    (all.init, all.last)
+  }
+
+  // Similar to above, but with a limited amount of deconstruction.
+  def deconstructArgs(tpe: Type, args: Int): (Seq[Type], Type) = {
+    def deconstructArgs(argList: Seq[Type], nextFunc: Type, remaining: Int): Seq[Type] = nextFunc match {
+      case Function(arg, next) if remaining > 0 => deconstructArgs(argList :+ arg, next, remaining -1)
+      case result => argList :+ result
+    }
+    val all = deconstructArgs(Nil, tpe, args)
     (all.init, all.last)
   }
 

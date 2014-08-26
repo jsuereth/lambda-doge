@@ -198,14 +198,12 @@ object MethodWriter {
         } yield ()
 
 
-      // Now we have special treatment for Lambda calls.
-      // TODO - Catch lambda-applications
+      // Now we have special treatment for Closure calls.  i.e.
+      // we need to use java.util.function.Function.apply rather than just straight JVM dispatch.
       case ClosureCall(ap, argsToClosure) => callClosure(ap, argsToClosure)
 
 
-
-
-      // Here are straight up method calls with all known arguments.
+      // Here we have a straight up method call with all argumnets known.
       case ap @ ApExprTyped(IdReferenceTyped(_, Location(s @ StaticMethod(_, _, argTypes, _)), _), args, tpe, _) if argTypes.length == args.length =>
         type MWS[A] = State[MethodWriterState, A]
         for {
@@ -214,18 +212,22 @@ object MethodWriter {
         } yield ()
 
 
+      // Partial Application.
       // Now we need to lift closures.  All built-in expressions should already have been handled.
       // Note: we may be lifting built-in expressions into closures...
       case ap @ ApExprTyped(id, args, tpe, _) =>
         System.err.println(s"Lifting partial application: $ap")
         liftClosure(id, args, tpe, ap.pos)
 
-      //case ref: IdReferenceTyped => liftLambda(ref, Nil, ref.pos)
       case _ => sys.error(s"Unable to handle ast: $ast")
   })
 
 
-  /** Makes a closure method call, a.k.a against a closure instance */
+  /** Makes a closure method call, a.k.a against a closure instance
+    * TODO - Maybe we should automatically convert closure application trees into TWO method calls,
+    * one which is a regular dispatch and one which is Function application before we get to this stage,
+    * rather than using this complex logic here.
+    */
   def callClosure(ap: ApExprTyped, argsToClosure: Int): State[MethodWriterState, Unit] = {
     System.err.println(s"Generating closure call with $argsToClosure normal args and ${ap.args.size - argsToClosure} partially applied args.")
     System.err.println(s"  expr = $ap")
@@ -239,7 +241,7 @@ object MethodWriter {
     // Helper method to pass each closure argument into the curried function.
     def partiallyApply(arg: TypedAst): MWS[Unit] = {
       for {
-        _ <-placeOnStack(arg)
+        _ <- placeOnStack(arg)
         _ <- box(arg.tpe)
         _ <- rawInsn(_.visitMethodInsn(INVOKEINTERFACE, "java/util/function/Function", "apply", "(Ljava/lang/Object;)Ljava/lang/Object;"))
       } yield ()
@@ -247,6 +249,8 @@ object MethodWriter {
     for {
       _ <- placeOnStack(closureExpr)
       _ <- argsForClosure.toList.traverse[MWS, Unit](partiallyApply)
+    // TODO - unbox to result type or the application...
+     _ <- unbox(ap.tpe)
     } yield  ()
   }
 
@@ -263,8 +267,16 @@ object MethodWriter {
       "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;")
 
 
-  // Here we use invokeDynamic and Java's metaFactoryHandle to lift a closure (with one captured arg)
-  // for the given method.
+  /**
+   * THis will lift a java.util.function.Function class from a partially-applied function call.
+   *
+   * Requirements:
+   *   1. The referenced method must have ALL arguments satisified but one. i.e. id.args == args.size-1
+   *   2. The referenced method must not be built-in or an argument.
+   *
+   * Here we use invokeDynamic and Java's metaFactoryHandle to lift a closure (with one captured arg)
+   * for the given method.   This will place a `java.util.function.Function<?,?>` object on the stack.
+   */
   def liftClosure(id: IdReferenceTyped, args: Seq[TypedAst], resultType: Type, pos: Position): State[MethodWriterState, Unit] = {
     type MWS[A] = State[MethodWriterState, A]
     for {
@@ -294,6 +306,10 @@ object MethodWriter {
       }
     } yield ()
   }
+
+  /** Generates a method handle from the TypeEnvironmentInfo references, or throws an error if the type does not
+    * refer to a valid method.
+    */
   private def methodHandleFromEnvironment(env: TypeEnvironmentInfo, pos: Position): Handle =
    env.location match {
      case StaticMethod(cls, mthd, args, result) =>
@@ -319,7 +335,7 @@ object MethodWriter {
   type WrittenMethodState = State[MethodWriterState, Unit]
 
 
-  /** TOOD - Unifiy with however Java types are exposed in the typesystem */
+  // TOOD - Unify with however Java types are exposed in the typesystem
   def getStatic(className: String, field: String, tpeString: String) = State[MethodWriterState, Unit] { state =>
     state.mv.visitFieldInsn(GETSTATIC, className, field, tpeString)
     state -> ()
