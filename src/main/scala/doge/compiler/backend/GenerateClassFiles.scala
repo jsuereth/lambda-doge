@@ -131,14 +131,7 @@ object MethodWriter {
   }
 
 
-  /** Will invoke a method defined in the current classfile, with the given type. */
-  @deprecated
-  def callStaticLocalMethod(name: String, args: Int, tpe: Type) = State[MethodWriterState, Unit] { state =>
-    state.mv.visitMethodInsn(INVOKESTATIC, state.className, name, GenerateClassFiles.getFunctionSignature(tpe, args))
-    state -> ()
-  }
-
-
+  /** Wrotes an invokestatic call, all arguments must already be on the stack. */
   def callStaticMethod(m: StaticMethod) = State[MethodWriterState, Unit] { state =>
     state.mv.visitMethodInsn(INVOKESTATIC, m.className, m.method, GenerateClassFiles.getMethodSignature(m.args, m.result))
     state -> ()
@@ -213,11 +206,19 @@ object MethodWriter {
 
 
       // Here are straight up method calls with all known arguments.
-      case ap @ ApExprTyped(IdReferenceTyped(_, Location(s @ StaticMethod(_, _, argTypes, _)), _), args, tpe, _) if argTypes.length == args.length => callStaticMethod(s)
+      case ap @ ApExprTyped(IdReferenceTyped(_, Location(s @ StaticMethod(_, _, argTypes, _)), _), args, tpe, _) if argTypes.length == args.length =>
+        type MWS[A] = State[MethodWriterState, A]
+        for {
+          _ <- args.toList.traverse[MWS, Unit](placeOnStack)
+          _ <- callStaticMethod(s)
+        } yield ()
+
 
       // Now we need to lift closures.  All built-in expressions should already have been handled.
       // Note: we may be lifting built-in expressions into closures...
-      case ap @ ApExprTyped(id, args, tpe, _) => liftClosure(id, args, ap.pos)
+      case ap @ ApExprTyped(id, args, tpe, _) =>
+        System.err.println(s"Lifting partial application: $ap")
+        liftClosure(id, args, tpe, ap.pos)
 
       //case ref: IdReferenceTyped => liftLambda(ref, Nil, ref.pos)
       case _ => sys.error(s"Unable to handle ast: $ast")
@@ -250,11 +251,6 @@ object MethodWriter {
   }
 
 
-  /** Will invoke a method defined in the current classfile, with the given type. */
-  //def callStaticLocalMethod(name: String, args: Int, tpe: Type) = State[MethodWriterState, Unit] { state =>
-  //  state.mv.visitMethodInsn(INVOKESTATIC, state.className, name, GenerateClassFiles.getFunctionSignature(tpe, args))
- //   state -> ()
- // }
   // TODO - Maybe create a new set of ASTs where we can lift lambdas prior to bytecode generation.
   import scala.util.parsing.input.Position
 
@@ -269,41 +265,41 @@ object MethodWriter {
 
   // Here we use invokeDynamic and Java's metaFactoryHandle to lift a closure (with one captured arg)
   // for the given method.
-  def liftClosure(id: IdReferenceTyped, args: Seq[TypedAst], pos: Position): State[MethodWriterState, Unit] = {
+  def liftClosure(id: IdReferenceTyped, args: Seq[TypedAst], resultType: Type, pos: Position): State[MethodWriterState, Unit] = {
     type MWS[A] = State[MethodWriterState, A]
     for {
       _ <- args.toList.traverse[MWS, Unit](placeOnStack)
       cn <- className
       _ <- rawInsn { mv =>
+        import org.objectweb.asm.commons.GeneratorAdapter
         // A method handle on the function we're lifting into a closure.
-        // TODO - make this more generic.
-        val delegateMethodHandle: Handle =
-          new Handle(
-            Opcodes.H_INVOKESTATIC,
-            cn,
-            id.name,
-            "(Ljava/lang/Object;)Ljava/lang/Object;")
-        // TODO - make these correect
-        val inputType = Type.getType("(Ljava/lang/Integer;)Ljava/lang/Integer;")
-        val outputType = Type.getType("(Ljava/lang/Integer;)Ljava/lang/Integer;")
-        val bootstrapArgs =
-          Array(inputType, delegateMethodHandle, outputType)
+        val delegateMethodHandle: Handle = methodHandleFromEnvironment(id.env, pos)
+        // TODO - Will we always be returning an object?  Perhaps
+        val inputType: org.objectweb.asm.Type = org.objectweb.asm.Type.getType("(Ljava/lang/Object;)Ljava/lang/Object;")
+        // TODO - This needs to be the type of the resulting closure.
+        val outputType: org.objectweb.asm.Type = org.objectweb.asm.Type.getType(GenerateClassFiles.getFunctionSignature(resultType, 1))
+        // Our bootstrap signature takes in one argument and returns a function, so...
         val bootStrapSignature =
-           s"${args.map(a => GenerateClassFiles.getFieldSignature(a.tpe)).mkString("(", "", ")")}Ljava/util/function/Function;"
+          GenerateClassFiles.getMethodSignature(args.map(_.tpe), TypeSystem.Function(TypeSystem.newVariable, TypeSystem.newVariable))
+          //"(Ljava/util/function/Function;)Ljava/util/function/Function;"
         // TODO - get actual method type
-        /*
         mv.visitInvokeDynamicInsn(
           "apply",
-          // TODO - Fix the signatures here.
           bootStrapSignature,
           metaFactoryHandle,
-          bootstrapArgs
-        );*/
-
-        // TODO - we may need to worry about the stack here, etc.
+          inputType,
+          delegateMethodHandle,
+          outputType
+        );
       }
     } yield ()
   }
+  private def methodHandleFromEnvironment(env: TypeEnvironmentInfo, pos: Position): Handle =
+   env.location match {
+     case StaticMethod(cls, mthd, args, result) =>
+       new Handle(Opcodes.H_INVOKESTATIC, cls, mthd, GenerateClassFiles.getFunctionSignature(TypeSystem.FunctionN(result, args:_*), args.size))
+     case _ => sys.error(s"We don't handle methods of type: ${env}, at\n ${pos.longString}")
+   }
 
   /** calls a function with a given reference and set of arguments. */
   def applyFunction(i: IdReferenceTyped, args: Seq[TypedAst]): State[MethodWriterState, Unit] = {
@@ -311,7 +307,10 @@ object MethodWriter {
     type S[A] = State[MethodWriterState, A]
     for {
       _ <- args.reverse.toList.traverse[S, Unit](placeOnStack)
-      _ <- callStaticLocalMethod(i.name, args.size, i.tpe)
+      _ <- i.env.location match {
+        case s: StaticMethod => callStaticMethod(s)
+        case _ => sys.error(s"Unable to determine how to invoke method $i")
+      }
     } yield ()
 
   }
@@ -465,20 +464,20 @@ object GenerateClassFiles {
   def getFunctionSignature(tpe: Type, args: Int, pos: Option[Position ] = None): String = {
     import TypeSystem.Function
     val signature = new SignatureWriter()
-    def visitFunctionSignature(signature: SignatureVisitor, f: Type, args: Int): Unit =
+    def visitFunctionSignature(signature: SignatureVisitor, f: Type, a: Int): Unit =
       f match {
-        case f if args <= 0 =>
+        case f if a <= 0 =>
           visitSignatureInternal(signature.visitReturnType, f, pos)
         case Function(arg, next @ Function(_,_)) =>
           signature.visitParameterType()
           visitSignatureInternal(signature, arg, pos)
-          visitFunctionSignature(signature, next, args - 1)
+          visitFunctionSignature(signature, next, a - 1)
         case Function(arg, result) =>
           signature.visitParameterType()
           visitSignatureInternal(signature, arg, pos)
-          visitFunctionSignature(signature, result, args - 1)
+          visitFunctionSignature(signature, result, a - 1)
         // TODO _ Everything else is assumed to be an object
-        case _ => sys.error(s"Reached end of function signature type, but not end of argument count required! type: $f")
+        case _ => sys.error(s"Reached end of function signature type, but not end of argument count required! type: $tpe, expected args: $args")
       }
     visitFunctionSignature(signature, tpe, args)
     signature.toString

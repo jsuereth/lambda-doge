@@ -49,7 +49,7 @@ object Compiler {
     log(s"  -- Typed--\n${typed}")
     val closured = ClosureLift.liftClosures(typed)
     log(s"  -- Closure-Lifted --\n${closured}")
-    val clsFile = GenerateClassFiles.makeClassfile(typed, classDirectory)
+    val clsFile = GenerateClassFiles.makeClassfile(closured, classDirectory)
     clsFile
   }
 
