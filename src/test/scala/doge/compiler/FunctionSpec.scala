@@ -8,7 +8,7 @@ object FunctionSpec extends FullCompilerSpec {
 
     The built-in function support should
        curry application                                 $generateFunctionsAndCurriedApplications
-       lift built-in partially applied functions.        $liftBuiltIn
+       lift built-in partially applied functions         $liftBuiltIn
   """
 
 

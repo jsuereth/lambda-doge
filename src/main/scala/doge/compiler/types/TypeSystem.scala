@@ -53,17 +53,20 @@ object TypeSystem {
     // TODO - this shouldn't be hardcoded...
     override def toString =
       if(args.isEmpty) s"$name"
-      else if(name == "Tuple2") s"(${args(0)}, ${args(1)})"
-      else if(name == "→") s"${args(0)} $name ${args(1)}"
+      else if(name == TUPLE2_TCONS_NAME) s"(${args(0)}, ${args(1)})"
+      else if(name == FUNCTION_TCONS_NAME) s"${args(0)} $name ${args(1)}"
       else s"($name ${args.mkString(" ")})"
   }
 
+  val FUNCTION_TCONS_NAME = "→"
+  val TUPLE2_TCONS_NAME="Tuple2"
+
   /** helper to create a function type of From -> To. */
   object Function {
-    def apply(from: Type, to: Type): TypeConstructor = TypeConstructor("→", Array(from, to))
+    def apply(from: Type, to: Type): TypeConstructor = TypeConstructor(FUNCTION_TCONS_NAME, Array(from, to))
     def unapply(t: Type): Option[(Type,Type)] =
       t match {
-        case TypeConstructor("→", Seq(from, to)) => Some(from -> to)
+        case TypeConstructor(FUNCTION_TCONS_NAME, Seq(from, to)) => Some(from -> to)
         case _ => None
       }
     // TODO - Handle failure
@@ -95,14 +98,14 @@ object TypeSystem {
 
   // Simple types are Type operators with no arguments.
   // Here we hardcode the types for the literals in Doge.
-  val Integer = Simple("int")
-  val Bool = Simple("bool")
+  val Integer = Simple("Int")
+  val Bool = Simple("Boolean")
 
   // TODO - Unsupported types
   val String = Simple("String")  // TODO - Alias this to list int?
   val Unit = Simple("Unit")
   val ListType = TypeConstructor("List", Seq(newVariable))
   val MapType = TypeConstructor("Map", Seq(newVariable, newVariable))
-  val Tuple2Type = TypeConstructor("Tuple2", Seq(newVariable, newVariable))
+  val Tuple2Type = TypeConstructor(TUPLE2_TCONS_NAME, Seq(newVariable, newVariable))
 }
 

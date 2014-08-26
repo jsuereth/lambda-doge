@@ -215,9 +215,7 @@ object MethodWriter {
       // Partial Application.
       // Now we need to lift closures.  All built-in expressions should already have been handled.
       // Note: we may be lifting built-in expressions into closures...
-      case ap @ ApExprTyped(id, args, tpe, _) =>
-        System.err.println(s"Lifting partial application: $ap")
-        liftClosure(id, args, tpe, ap.pos)
+      case ap @ ApExprTyped(id, args, tpe, _) => liftClosure(id, args, tpe, ap.pos)
 
       case _ => sys.error(s"Unable to handle ast: $ast")
   })
@@ -229,8 +227,6 @@ object MethodWriter {
     * rather than using this complex logic here.
     */
   def callClosure(ap: ApExprTyped, argsToClosure: Int): State[MethodWriterState, Unit] = {
-    System.err.println(s"Generating closure call with $argsToClosure normal args and ${ap.args.size - argsToClosure} partially applied args.")
-    System.err.println(s"  expr = $ap")
     // Alg  - First we call all arguments up until we have a closure on the stack
     //        Second, we invokedynamic the apply method with remaiing unbound arguments.
     val realArgsToClosure = ap.args.take(argsToClosure)

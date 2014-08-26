@@ -35,6 +35,51 @@ object DogeParser extends RegexParsers {
     case name if isSafeId(name) => name
   }
 
+  // Helper to convert a parsed type into our AST types.
+  def extractType(ast: ParseTypeAst): TypeSystem.Type = {
+    var vars = Map.empty[String, TypeSystem.TypeVariable]
+    def makeVar(name: String): TypeSystem.Type = {
+      vars.getOrElse(name, {
+        val result = TypeSystem.newVariable
+        vars = vars + (name -> result)
+        result
+      })
+    }
+    def extractImpl(ast: ParseTypeAst): TypeSystem.Type =
+      ast match {
+        case TypeVar(name) => makeVar(name)
+        case TypeCons(id, args) => TypeSystem.TypeConstructor(id, args.map(extractImpl))
+      }
+    extractImpl(ast)
+  }
+
+  lazy val typeParser =
+     typeFull ^^ extractType
+  lazy val typeFull = (typeFunction | typeRaw)
+  // Type parsing. TODO - figuring out functions will be tough..
+  lazy val typeFunction: Parser[ParseTypeAst] =
+    (typeRaw <~ ("=>" | TypeSystem.FUNCTION_TCONS_NAME)) ~ typeFull ^^ {
+      case arg ~ result => TypeCons(TypeSystem.FUNCTION_TCONS_NAME, Seq(arg, result))
+    }
+  lazy val typeRaw: Parser[ParseTypeAst] =
+    (grouped | typeVar | typeConstructor)
+
+  lazy val typeConstructor: Parser[TypeCons] =
+     typeId ~ opt("[" ~> typeRaw.* <~ "]") ^^ {
+       case id ~ args => TypeCons(id, args.getOrElse(Nil))
+     }
+  lazy val grouped: Parser[ParseTypeAst] = "(" ~> typeFull <~ ")"
+  lazy val typeVar: Parser[TypeVar] = id ^? {
+    // TODO - handle locales correctly
+    case name if name.forall(_.isLower) => TypeVar(name)
+  }
+  lazy val typeId: Parser[String] = id ^? {
+    // TODO - handle locales correctly
+    case name if !name.forall(_.isLower) => name
+  }
+
+
+
   lazy val idRef: Parser[IdReference] =
     positioned(id map { name => IdReference(name) })
 
