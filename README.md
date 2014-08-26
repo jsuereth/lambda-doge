@@ -28,12 +28,14 @@ Below follows a minor user guide.
     Much typing!
     Very Welcome!
 
-DOGE is a staticly typed language based, loosely, on lambda calculus with several ideas taken from Haskell.
+DOGE is a statically typed language based, loosely, on lambda calculus with several ideas taken from Haskell/Scala.
 
 It has the following features:
 
 * Type Inference
 * Tuples
+* Lists
+* Curried functions
 * Compiles to JVM bytecode
 
 
@@ -76,17 +78,36 @@ Expressions can be one of three things:
 2. A boolean literal, i.e. `true` or `false`
 3. A function application, e.g. `MUCH <func> <args> !` **Note: the ! ends the function application**
 
-Named expressions may also have 'holes', i.e. function arguments.   These are denoted using the `SO` synatx, for example here is a method which adds one to any integer it is given:
+Named expressions may also have 'holes', i.e. function arguments.   These are denoted using the `SO` syntax, for example here is a method which adds one to any integer it is given:
 
     WOW
     addOne
     SO number
     MUCH Plus number 1!
 
+Additionally, all functions in DOGE are curried by default.  That is, we can pass as many arguments as we wish to methods.
+For example, `Plus` has the type `Int => Int => Int`.
+This means it is a function which takes two integers and returns an integer, however you can supply just one integer to get back
+a function `Int => Int`.
 
-Besides this basic syntax, there are a set of built in functions you can use to define your program.
+    WOW
+    partialAdd
+    MUCH Plus 1!
+    
+    WOW
+    fullAdd
+    MUCH partialAdd 2!
+    
+The `partialAdd` method will return a function `Int => Int` as its result.  The `fullAdd` method supplies the remaining
+arguments, and its result would be `3`.
 
-Additionally, any zero-argment expression named `main` will be evaluated as the "application" on the JVM.
+
+
+
+Besides this basic syntax, there are a set of built in functions/methods you can use to define your program.
+
+Additionally, any zero-argument expression named `main` will be evaluated as the "application" on the JVM.  This can
+be passed to the `java` executable to "run" a lambda-doge program.
 
 
 # Standard Library
@@ -143,6 +164,23 @@ Returns the first part of a tuple
     
 Returns the second part of a tuple
 
+## Lists
+
+    Nil :: List a
+    
+Creates an empty list with unspecified contents.
+
+    cons :: a -> List a -> List a
+
+Prepends an element to a list.
+
+     hd :: List a -> a
+   
+Grabs the top of a list.  Note: This may throw an exception.
+
+     tl :: List a -> List a
+   
+Grabs a new list with all but the first element.
 
 ## Lame hacks
 

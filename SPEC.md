@@ -10,11 +10,11 @@ Below follows the specifications, including built-in "standard library".
 
 Any whitespace acts as a token delimiter.
 
-    type-declr := SUCH <type>
     arg-list := SO <id>*
     let-expr :=  WOW <id> <type-declr>? <arg-list>? (<application-expr>)
     application-expr := (MANY | VERY | MUCH) <application> !
     expr := (<let-expr> | <application-expr> | <literal> | <id>)
+    type-declr := SUCH <type>
     type := ??? TODO ???
 
 Examples:
@@ -47,7 +47,7 @@ Expected execution output:
 ### Parser TODOs
 
 * Refined the AST so we get better positions on type errors.
-* More literal types (e.g. String, List)
+* More literal types (e.g. String, Lambda)
 * Semantics for explicit type declaration
 * Pattern matching
 
@@ -108,6 +108,7 @@ for details.
 
 * Refine let-expression semantics, including scoping issues and nesting.
 * Support for Typeclasses
+* Importing modules
 * Some kind of mechanism for handling JDK types, possibly via typeclasses.
 * Support for Kinds
 * Pattern matching support.
@@ -141,6 +142,8 @@ encode as:
 
      public static int x() { ... }
      
+The following are additional rules for each class of type:
+     
 ### Primitives
 
 Any `Int` or `Bool` in the system is encoded as its raw type.  These are boxed, when needed, to fit in generic types.
@@ -161,17 +164,18 @@ All methods on lists are directly encoded as interface calls against `java.util.
 via unquantified `java.util.List`.
 
 
+### Functions
 
-### Lambdas
+Currently any let expression which does not define enough arguments for the application of a function will be
+lifted into Java 8 style lambdas.   This entails the following:
 
-Not supported at this time
-
-
-TODO - more encodings, like Lists, Tuples, etc.
-
-
-
-
+1. Any function application expression on built-in functions will be lifted into a <foo>$lambda$<num> method and the
+  application expression will be rewired to point at this lambda expression.
+2. Any partial function application that leaves more than *1* free argument will be curried into a series of
+   let-expressions which each bind another argument in the function and call each other.  The original expression
+   is replaced with a partial function application.
+3. During Bytecode generation, all partial function applications are lifted using Java 8's metafactory into
+   java.util.function.Function objects.
 
 
 
