@@ -89,6 +89,12 @@ object ClosureLift {
     // NOTE - There's an error here where argument types are erased somehow...
     def liftImpl(expr: TypedAst): TypedAst =
        expr match {
+         // ALL lambda expressions are lifted into helper methods
+         case le: LambdaExprTyped =>
+           val (ap, let) = createClosure(le, moduleClassName, makeMethodName(l.name))
+           // Delegate any partial funcion work to ouselves.
+           additionalLets = liftImpl(let).asInstanceOf[LetExprTyped] +: additionalLets
+           ap
          // If we have a partial application of a built-in method, we need to construct
          // a raw method which we can lift.
          case PartialApplication(ap @ IsBuiltIn()) =>
@@ -144,6 +150,53 @@ object ClosureLift {
     val result = liftImpl(l).asInstanceOf[LetExprTyped]
     result +: additionalLets
   }
+
+
+  /** Constructs a new method for a lambda expression *AND* an application expression which
+    * calls the underlying method.
+    */
+  def createClosure(l: LambdaExprTyped, className: String, methodName: String): (ApExprTyped, LetExprTyped) = {
+    // TODO - Implement this!
+    val closedArgs = closedRefs(l.definition).filterNot(r => l.argNames.contains(r.name))
+    val (allArgTypes, returnType) = deconstructArgs(l.tpe, l.argNames.size)
+    val unclosedArgs =
+      for {
+        (name, tpe) <- l.argNames.zip(allArgTypes)
+      } yield IdReferenceTyped(name, TypeEnvironmentInfo(name, Argument, tpe), l.pos)
+
+    val allArgNames =
+      (closedArgs ++ unclosedArgs).map(_.name)
+    val implMethod = LetExprTyped(
+       name = methodName,
+       allArgNames,
+       l.definition,
+       l.tpe,
+       l.pos
+    )
+    // TODO - The type for this method needs to be very different.  i.e. We need to construct
+    // arg types from all closed variables and such.  For now, we'll cheat and see what happens.
+    val implMethodRef = IdReferenceTyped(
+      methodName,
+      TypeEnvironmentInfo(methodName, StaticMethod(className, methodName, allArgTypes, returnType), l.tpe)
+    )
+    val callImplMethodExpr =
+      ApExprTyped(
+         implMethodRef,
+         closedArgs,
+         l.tpe
+      )
+    (callImplMethodExpr, implMethod)
+  }
+
+  // TODO - this doesn't really handle scoping well...
+  def closedRefs(l: TypedAst): Seq[IdReferenceTyped] = l match {
+    case i: IdReferenceTyped if i.env.location == Argument => Seq(i)
+    case ApExprTyped(id, args, _, _) => args.flatMap(closedRefs) ++ closedRefs(id)
+    // TODO - handle nested lambda expressions *OR* ensure we always work from deepest to outer scope.
+    // We specifically ignore let expressions
+    case _ => Nil
+  }
+
 
 
   // Here we need to:

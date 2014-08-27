@@ -19,6 +19,9 @@ case class ApExpr(name: IdReference, args: Seq[DogeAst]) extends DogeAst {
     if(args.isEmpty) name.toString
     else s"($name ${args.mkString(" ")})"
 }
+case class LambdaExpr(argNames: Seq[String], defn: DogeAst) extends DogeAst {
+  override def toString = s"{ ${argNames.mkString("(", ", ", ")")} => $defn }"
+}
 sealed abstract class Literal extends DogeAst
 case class IntLiteral(value: Int) extends Literal {
   override def toString = value.toString

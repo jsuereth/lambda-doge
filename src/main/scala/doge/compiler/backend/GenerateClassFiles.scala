@@ -149,14 +149,26 @@ object MethodWriter {
     def unapply(id: IdReferenceTyped): Option[Int] = {
       id.env.location match {
         case LocalField(_, _, Function(_,_)) => Some(0)
+        case LocalField(_, _, _) => None
         case StaticMethod(_, _, args, Function(_,_)) =>  Some(args.size)
-        case _ => None
+        case StaticMethod(_, _, args, _) =>  None
+        case Argument => id.env.tpe match {
+          case Function(_,_) => Some(0)
+          case _ => None
+        }
+        case BuiltIn => None
       }
     }
   }
+  // TODO - Somehow this isn't catching arguments that are closures...
   object ClosureCall {
     def unapply(ast: TypedAst): Option[(ApExprTyped, Int)] = ast match {
-      case ap @ ApExprTyped(ClosureReference(argCount), args, _, _) if args.size > argCount => Some(ap, argCount)
+      case ap @ ApExprTyped(ClosureReference(argCount), args, _, _) =>
+        if(args.size > argCount) Some(ap, argCount)
+        else {
+          System.err.println(s"Looks like a closure call, but not enough args: ($ap)")
+          None
+        }
       case _ => None
     }
   }
@@ -228,11 +240,13 @@ object MethodWriter {
     */
   def callClosure(ap: ApExprTyped, argsToClosure: Int): State[MethodWriterState, Unit] = {
     // Alg  - First we call all arguments up until we have a closure on the stack
-    //        Second, we invokedynamic the apply method with remaiing unbound arguments.
-    val realArgsToClosure = ap.args.take(argsToClosure)
-    // TOOD - Don't hardcode a bad type here.
-    val closureExpr = ApExprTyped(ap.name, realArgsToClosure, ap.name.tpe)
-    val argsForClosure = ap.args.drop(argsToClosure)
+    //        Second, we invokedynamic the apply method with remaining unbound arguments.
+    def closureExpr = {
+      val realArgsToClosure = ap.args.take(argsToClosure)
+      // TOOD - Don't hardcode a bad type here.
+      ApExprTyped(ap.name, realArgsToClosure, ap.name.tpe)
+    }
+    val argsForClosure = ap.args.drop(argsToClosure )
     type MWS[A]=State[MethodWriterState, A]
     // Helper method to pass each closure argument into the curried function.
     def partiallyApply(arg: TypedAst): MWS[Unit] = {
@@ -242,8 +256,12 @@ object MethodWriter {
         _ <- rawInsn(_.visitMethodInsn(INVOKEINTERFACE, "java/util/function/Function", "apply", "(Ljava/lang/Object;)Ljava/lang/Object;"))
       } yield ()
     }
+    def placeClosureOnStack =
+      if(argsToClosure == 0) placeOnStack(ap.name)
+      else placeOnStack(closureExpr)
+
     for {
-      _ <- placeOnStack(closureExpr)
+      _ <- placeClosureOnStack
       _ <- argsForClosure.toList.traverse[MWS, Unit](partiallyApply)
     // TODO - unbox to result type or the application...
      _ <- unbox(ap.tpe)

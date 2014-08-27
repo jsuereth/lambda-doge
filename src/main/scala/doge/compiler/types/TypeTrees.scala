@@ -27,6 +27,10 @@ case class LetExprTyped(name: String, argNames: Seq[String], definition: TypedAs
         |    $name(${argNames.mkString(", ")})  =
         |      $definition""".stripMargin
 }
+
+case class LambdaExprTyped(argNames: Seq[String], definition: TypedAst, tpe: Type, pos: Position = NoPosition) extends TypedAst {
+  override def toString = s"{ ${argNames.mkString("(", ", ", ")")} => $definition }[$tpe]"
+}
 case class ApExprTyped(name: IdReferenceTyped, args: Seq[TypedAst], tpe: Type, pos: Position = NoPosition) extends TypedAst {
   override def toString =
     if(args.isEmpty) s"$name"
@@ -34,11 +38,11 @@ case class ApExprTyped(name: IdReferenceTyped, args: Seq[TypedAst], tpe: Type, p
 }
 sealed abstract class LiteralTyped extends TypedAst
 case class IntLiteralTyped(value: Int, pos: Position = NoPosition) extends LiteralTyped {
-  override def toString = s"$value[int]"
+  override def toString = s"$value[Int]"
   override val tpe = TypeSystem.Integer
 }
 case class BoolLiteralTyped(value: Boolean, pos: Position = NoPosition) extends LiteralTyped {
-  override def toString = s"$value[bool]"
+  override def toString = s"$value[Boolean]"
   override def tpe = TypeSystem.Bool
 }
 

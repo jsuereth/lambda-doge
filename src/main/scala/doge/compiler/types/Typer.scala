@@ -91,6 +91,7 @@ object Typer {
       case app: ApExpr => typeApply(app).asInstanceOf[TyperState[TypedAst]]
       case let: LetExpr => typeLet(let).asInstanceOf[TyperState[TypedAst]]
       case m: Module => typeModule(m).asInstanceOf[TyperState[TypedAst]]
+      case l: LambdaExpr => typeLambda(l).asInstanceOf[TyperState[TypedAst]]
     }
   }
 
@@ -157,6 +158,22 @@ object Typer {
 
 
   /**
+   * Will type an inlined lambda expression.
+   */
+  private def typeLambda(ref: LambdaExpr): TyperState[LambdaExprTyped] = {
+    val argToType: Seq[TypeEnvironmentInfo] =
+      ref.argNames.map(n => TypeEnvironmentInfo(n, Argument, newVariable))
+    val argTypes = argToType.map(_.tpe)
+    for {
+      _ <- addEnvironment(argToType:_*)
+      resultAst <- typeAst(ref.defn)
+      pargs <- argTypes.toList.traverse[TyperState, Type](recursivePrune)
+      rtpe <- recursivePrune(resultAst.tpe)
+      _ <- clearEnvironment(argToType.toSeq:_*)
+    } yield LambdaExprTyped(ref.argNames,resultAst, TypeSystem.FunctionN(rtpe, pargs:_*), ref.pos)
+  }
+
+  /**
    * Will type a let tree.  Does not add the let types into the state when complete.
    */
   private def typeLet(ref: LetExpr): TyperState[LetExprTyped] = {
@@ -219,7 +236,13 @@ object Typer {
       for {
         lets <- l.definitions.toList.traverse[TyperState, LetExprTyped](pruneLet)
       } yield ModuleTyped(l.name, lets)
+    }
 
+    def pruneLambda(l: LambdaExprTyped): TyperState[LambdaExprTyped] = {
+      for {
+        defn <- pruneAst(l.definition)
+        tpe <- recursivePrune(l.tpe)
+      } yield LambdaExprTyped(l.argNames, defn, tpe, l.pos)
     }
     ast match {
       case let: LetExprTyped => pruneLet(let).asInstanceOf[TyperState[TypedAst]]
@@ -227,6 +250,7 @@ object Typer {
       case ref: IdReferenceTyped => pruneRef(ref).asInstanceOf[TyperState[TypedAst]]
       case l: LiteralTyped => withState(l)
       case m: ModuleTyped => pruneModule(m).asInstanceOf[TyperState[TypedAst]]
+      case l: LambdaExprTyped => pruneLambda(l).asInstanceOf[TyperState[TypedAst]]
     }
   }
 

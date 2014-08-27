@@ -96,23 +96,28 @@ object DogeParser extends RegexParsers {
   lazy val argList: Parser[Seq[String]] =
     SO ~> rep(id)
 
-  // TODO - Real type semantics...
-  lazy val typeList: Parser[Seq[String]] =
-    SUCH ~> rep(id)
+  lazy val typeList: Parser[TypeSystem.Type] =
+    SUCH ~> typeParser
 
 
   lazy val letExpr: Parser[LetExpr] =
-    positioned(WOW ~ id ~ opt(typeParser) ~ opt(argList) ~ apExpr ^^ {
+    positioned(WOW ~ id ~ opt(typeList) ~ opt(argList) ~ apExpr ^^ {
        case ignore ~ id ~ tpe ~ args ~ result => LetExpr(id, tpe, args.getOrElse(Nil), result)
      })
   lazy val apExpr: Parser[ApExpr] =
-    positioned((((MANY | VERY | MUCH) ~> idRef ) ~ rep(expr) <~ EXCL) ^^ {
+    positioned((((VERY | MUCH) ~> idRef ) ~ rep(expr) <~ EXCL) ^^ {
       case id ~ args => ApExpr(id, args)
+    })
+
+  // TODO - optional types for lambda expressions.
+  lazy val lambdaExpr: Parser[LambdaExpr] =
+    positioned(MANY ~ rep(id) ~ apExpr ^^ {
+      case ignore ~ arg ~ defn => LambdaExpr(arg, defn)
     })
 
   lazy val literal: Parser[Literal] = intLiteral | boolLiteral
 
   lazy val expr: Parser[DogeAst] =
-    (letExpr | apExpr | literal | idRef)
+    (letExpr | lambdaExpr | apExpr | literal | idRef)
 
 }
