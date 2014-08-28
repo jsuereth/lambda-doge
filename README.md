@@ -72,11 +72,12 @@ The entire DOGE language is composed of named expressions.  We can define a new 
     <name>
     <function application expr>
     
-Expressions can be one of three things:
+Expressions can be one of four things:
 
 1. An integer literal, e.g. `1` or `451`
 2. A boolean literal, i.e. `true` or `false`
 3. A function application, e.g. `MUCH <func> <args> !` **Note: the ! ends the function application**
+4. A Lambda expression, e.g. `MANY <arg names> <function-application>`
 
 Named expressions may also have 'holes', i.e. function arguments.   These are denoted using the `SO` syntax, for example here is a method which adds one to any integer it is given:
 
@@ -127,7 +128,7 @@ as a syntactic sugar to ensure that expressions which require a function call ca
     ifs :: Boolean => a => a => a
 
 Encodes if statements. If the first argument is true, returns the second argument, otherwise returns the last argument.
-For evaluation semantics, the first/second argument are evaluated lazily.
+For evaluation semantics, the second/third argument are evaluated lazily.
 
 
 ## Integers

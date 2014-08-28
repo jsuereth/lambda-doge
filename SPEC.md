@@ -10,10 +10,11 @@ Below follows the specifications, including built-in "standard library".
 
 Any whitespace acts as a token delimiter.
 
-    arg-list := SO <id>*
+    expr := (<let-expr> | <lambda-expr> | <application-expr> | <literal> | <id>)
     let-expr :=  WOW <id> <type-declr>? <arg-list>? (<application-expr>)
-    application-expr := (MANY | VERY | MUCH) <application> !
-    expr := (<let-expr> | <application-expr> | <literal> | <id>)
+    arg-list := SO <id>*
+    application-expr := (VERY | MUCH) <application> !
+    lambda-expr := MANY <id>* <application-expr>
     type-declr := SUCH <type>
     type := (<typeFunction> | <rawType>)
     typeFunction := <rawType> => <type>
@@ -118,6 +119,7 @@ for details.
 * Support for Kinds
 * Pattern matching support.
 * Performance
+* Allow unbound type variables to be passed as java.lang.Objects
 
 
 ## JVM Encoding
@@ -172,10 +174,12 @@ via unquantified `java.util.List`.
 ### Functions
 
 Currently any let expression which does not define enough arguments for the application of a function will be
-lifted into Java 8 style lambdas.   This entails the following:
+lifted into Java 8 style lambdas.  In addition, all lambda expressions are lifted into LetExpressions and therefore
+encode as methods which are lifted into Java-8 style lambdas.  This entails the following:
 
 1. Any function application expression on built-in functions will be lifted into a <foo>$lambda$<num> method and the
-  application expression will be rewired to point at this lambda expression.
+  application expression will be rewired to point at this lambda expression.  Additionally, All lambda expressions
+  are lifted in similar manner.
 2. Any partial function application that leaves more than *1* free argument will be curried into a series of
    let-expressions which each bind another argument in the function and call each other.  The original expression
    is replaced with a partial function application.
