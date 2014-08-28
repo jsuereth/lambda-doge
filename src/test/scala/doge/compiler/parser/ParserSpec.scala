@@ -19,6 +19,7 @@ class ParserSpec extends Specification { def is = s2"""
       parse concrete types                           $parseConcreteTypes
       parse type constructors                        $parseTypeConstructors
       parse function types                           $parseFunctionTypes
+      parse lambda expressions                       $parseLambda
                                                         """
 
   def parseConcreteTypes =
@@ -53,6 +54,13 @@ class ParserSpec extends Specification { def is = s2"""
        types = None,
        argNames = Seq("numbers"),
        definition = ApExpr(IdReference("Plus"), Seq(IdReference("numbers"), IntLiteral(1)))
+    ))
+  }
+
+  def parseLambda = {
+    "MANY doge VERY Plus doge 1!" must parseAs(lambdaExpr, LambdaExpr(
+      argNames = Seq("doge"),
+      defn = ApExpr(IdReference("Plus"), Seq(IdReference("doge"), IntLiteral(1)))
     ))
   }
 

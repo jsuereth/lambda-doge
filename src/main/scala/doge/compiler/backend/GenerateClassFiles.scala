@@ -165,10 +165,7 @@ object MethodWriter {
     def unapply(ast: TypedAst): Option[(ApExprTyped, Int)] = ast match {
       case ap @ ApExprTyped(ClosureReference(argCount), args, _, _) =>
         if(args.size > argCount) Some(ap, argCount)
-        else {
-          System.err.println(s"Looks like a closure call, but not enough args: ($ap)")
-          None
-        }
+        else None
       case _ => None
     }
   }

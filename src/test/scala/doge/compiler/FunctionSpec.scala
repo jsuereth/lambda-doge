@@ -9,7 +9,21 @@ object FunctionSpec extends FullCompilerSpec {
     The built-in function support should
        curry application                                 $generateFunctionsAndCurriedApplications
        lift built-in partially applied functions         $liftBuiltIn
+       lift lambda expressions                           $liftLambda
   """
+
+  def liftLambda =
+    """
+      |WOW
+      |foo
+      |SO x
+      |VERY Plus MUCH x 1! 1!
+      |
+      |WOW test
+      |MUCH foo
+      |  MANY x VERY Plus x 1!
+      |!
+    """.stripMargin must compileAndEvalTestAs(3)
 
 
   def liftBuiltIn =

@@ -28,10 +28,26 @@ class TyperSpec extends Specification { def is = s2"""
       bind let expressions inside modules             $bindLetExpressionsInModules
       fail on specified type mismatch                 $failOnSpecifiedTypeMisMatch
       type with specified types                       $useTypesSpecified
+      type lambdas                                    $typeLambdas
                                                       """
 
   def failOnSpecifiedTypeMisMatch = {
     LetExpr("bad", Some(Integer), Nil, ApExpr(IdReference("plus"), Seq(IntLiteral(1)))) must not(typeCheck)
+  }
+
+  def typeLambdas = {
+    LambdaExpr(Seq("a", "b"), ApExpr(IdReference("plus"), Seq(IdReference("a"), IdReference("b")))) must
+      typeAs(
+        LambdaExprTyped(
+          argNames = Seq("a", "b"),
+          definition = ApExprTyped(
+            name = plusReference,
+            args = Seq(argReference("a", Integer), argReference("b", Integer)),
+            tpe = Integer
+          ),
+          tpe = plusType
+        )
+      )
   }
 
   def useTypesSpecified = {
