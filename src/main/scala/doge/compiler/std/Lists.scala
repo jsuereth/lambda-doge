@@ -1,8 +1,9 @@
 package doge.compiler.std
 
 import doge.compiler.backend.MethodWriterState
+import doge.compiler.std
 import doge.compiler.types.TypeSystem.{TypeConstructor, Type, newVariable, FunctionN, Function}
-import doge.compiler.types.{IdReferenceTyped, ApExprTyped, TypeSystem, TypedAst}
+import doge.compiler.types._
 import org.objectweb.asm.signature.SignatureVisitor
 import org.objectweb.asm.Opcodes._
 
@@ -16,23 +17,23 @@ object Lists extends BuiltInType {
   val HEAD = "hd"
   val TAIL = "tl"
 
-  override val typeTable: Map[String, Type] = Map(
-    NIL -> TypeSystem.ListType,
-    CONS -> {
+  override val typeTable: Seq[TypeEnvironmentInfo] = Seq(
+    TypeEnvironmentInfo(NIL, BuiltIn, TypeSystem.ListType),
+    TypeEnvironmentInfo(CONS, BuiltIn, {
       val a = newVariable
       val lst = TypeConstructor("List", Seq(a))
       FunctionN(lst, a, lst)
-    },
-    HEAD -> {
+    }),
+    TypeEnvironmentInfo(HEAD, BuiltIn, {
       val a = newVariable
       val lst = TypeConstructor("List", Seq(a))
       Function(lst, a)
-    },
-    TAIL -> {
+    }),
+    TypeEnvironmentInfo(TAIL, BuiltIn, {
       val a = newVariable
       val lst = TypeConstructor("List", Seq(a))
       Function(lst, lst)
-    }
+    })
   )
 
   override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {

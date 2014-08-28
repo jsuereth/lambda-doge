@@ -17,26 +17,6 @@ case class TypeError(msg: String) extends Exception(msg)
   */
 object TypeSystem {
 
-  /** Defines an environment where we can lookup types.
-    *  e.g. when type checking an expression, we need to
-    *  know the types of terms/references used.
-    */
-  trait Env {
-    def lookup(name: String): Type
-    def withAdded(types: (String, Type)*): Env
-  }
-
-  def dumbEnvironment(initial: Map[String, Type] = Map.empty[String,Type]): Env = new Env {
-    def lookup(name: String): Type = {
-      initial.get(name).getOrElse {
-        throw new TypeError(s"Type not found for term: $name in ${initial.mkString("\n * ","\n * ", "\n")}")
-      }
-    }
-    def withAdded(types: (String, Type)*): Env = {
-      dumbEnvironment(initial ++ types)
-    }
-  }
-
   // TODO - We need a way to pickle types in/out for modules...
 
   /** Base class for all types in this type system. */
@@ -73,19 +53,37 @@ object TypeSystem {
     // TODO - this shouldn't be hardcoded...
     override def toString =
       if(args.isEmpty) s"$name"
-      else if(name == "Tuple2") s"(${args(0)}, ${args(1)})"
-      else if(name == "→") s"${args(0)} $name ${args(1)}"
+      else if(name == TUPLE2_TCONS_NAME) s"(${args(0)}, ${args(1)})"
+      else if(name == FUNCTION_TCONS_NAME) s"${args(0)} $name ${args(1)}"
       else s"($name ${args.mkString(" ")})"
   }
 
+  val FUNCTION_TCONS_NAME = "→"
+  val TUPLE2_TCONS_NAME="Tuple2"
+
   /** helper to create a function type of From -> To. */
   object Function {
-    def apply(from: Type, to: Type): TypeConstructor = TypeConstructor("→", Array(from, to))
+    def apply(from: Type, to: Type): TypeConstructor = TypeConstructor(FUNCTION_TCONS_NAME, Array(from, to))
     def unapply(t: Type): Option[(Type,Type)] =
       t match {
-        case TypeConstructor("→", Seq(from, to)) => Some(from -> to)
+        case TypeConstructor(FUNCTION_TCONS_NAME, Seq(from, to)) => Some(from -> to)
         case _ => None
       }
+    // TODO - Handle failure
+    def arity(t: Type): Int = t match {
+      case Function(l, r) => 1 + arity(r)
+      case _ => 0
+    }
+
+    // Similar to above, but with a limited amount of deconstruction.
+    def deconstructArgs(tpe: Type)(args: Int = arity(tpe)): (Seq[Type], Type) = {
+      def deconstructArgs(argList: Seq[Type], nextFunc: Type, remaining: Int): Seq[Type] = nextFunc match {
+        case Function(arg, next) if remaining > 0 => deconstructArgs(argList :+ arg, next, remaining -1)
+        case result => argList :+ result
+      }
+      val all = deconstructArgs(Nil, tpe, args)
+      (all.init, all.last)
+    }
   }
   def FunctionN(to: Type, from: Type*): Type =
     from match {
@@ -102,20 +100,22 @@ object TypeSystem {
   // meant to be referentially transparent, in creating a unique type variable that
   // is not the same as another.  The id itself should not matter for
   // correct execution.
-  def newVariable: TypeVariable = TypeVariable(_nextVariableId.getAndIncrement)
+  def newVariable: TypeVariable = {
+    TypeVariable(_nextVariableId.getAndIncrement)
+  }
 
 
 
   // Simple types are Type operators with no arguments.
   // Here we hardcode the types for the literals in Doge.
-  val Integer = Simple("int")
-  val Bool = Simple("bool")
+  val Integer = Simple("Int")
+  val Bool = Simple("Boolean")
 
   // TODO - Unsupported types
   val String = Simple("String")  // TODO - Alias this to list int?
   val Unit = Simple("Unit")
   val ListType = TypeConstructor("List", Seq(newVariable))
   val MapType = TypeConstructor("Map", Seq(newVariable, newVariable))
-  val Tuple2Type = TypeConstructor("Tuple2", Seq(newVariable, newVariable))
+  val Tuple2Type = TypeConstructor(TUPLE2_TCONS_NAME, Seq(newVariable, newVariable))
 }
 

@@ -1,0 +1,41 @@
+WOW
+liftMe
+SO a
+MUCH Plus a!
+
+
+WOW
+Big
+SO a b c d
+MUCH  Plus
+  MUCH Plus
+     MUCH Plus c d!
+     b!
+  a!
+
+WOW
+closureOne
+SO x
+MUCH Big x!
+
+WOW
+higherOrder
+SUCH (Int => Int) => Int
+SO f
+MUCH f 1!
+
+WOW
+lambda
+VERY higherOrder
+  MANY x
+    VERY IS x
+  !
+!
+
+
+WOW
+main
+MUCH PrintLn
+MUCH closureOne 1 2 3 4!
+VERY lambda!
+3 !

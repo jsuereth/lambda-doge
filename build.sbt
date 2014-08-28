@@ -5,7 +5,9 @@ scalaVersion := "2.11.1"
 libraryDependencies ++= Seq(
   "org.specs2" %% "specs2" % "2.4" % "test",
   "org.scalaz" %% "scalaz-core" % "7.1.0",
-  "asm" % "asm-all" % "3.3.1"
+  "org.ow2.asm" % "asm-debug-all" % "5.0.3"
+  //"org.ow2.asm" % "asm" % "5.0.3",
+  //"org.ow2.asm" % "asm-commons" % "5.0.3"
 )
 
 scalacOptions in Test ++= Seq("-Yrangepos")

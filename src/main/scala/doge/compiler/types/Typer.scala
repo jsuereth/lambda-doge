@@ -1,5 +1,7 @@
 package doge.compiler.types
 
+import doge.compiler.ast
+
 import scala.util.parsing.input.Position
 import TypeSystem._
 import Typer.Substitutions
@@ -16,27 +18,35 @@ case class SyntaxTypeError(pos: Position, msg: String) extends Exception(
   * See the companion objects for access to type state internals.
   */
 case class TyperEnvironment(
-  env: Env,
+  env: TypeEnv,
   substitutions: Substitutions
 )
 object TyperEnvironment {
   type TyperState[A] = State[TyperEnvironment, A]
 
   /** Grabs the current type environment (scope) for the typer. */
-  def env: TyperState[Env] = State[TyperEnvironment, Env] { state => state -> state.env }
+  def env: TyperState[TypeEnv] = State[TyperEnvironment, TypeEnv] { state => state -> state.env }
   /** Grabs the current known variable refinements in the current typer run. */
   def substitutions: TyperState[Substitutions] = State[TyperEnvironment, Substitutions] { state => state -> state.substitutions }
   /** Adds term->type associations to the environment in this typer. */
-  def addEnvironment(types: (String, Type)*): TyperState[Unit] = State[TyperEnvironment, Unit] {
+  def addEnvironment(types: TypeEnvironmentInfo*): TyperState[Unit] = State[TyperEnvironment, Unit] {
     case x: TyperEnvironment =>
-      x.copy(env = x.env.withAdded(types:_*)) -> ()
+      x.copy(env = x.env.withLocal(types:_*)) -> ()
   }
+  def clearEnvironment(types: TypeEnvironmentInfo*): TyperState[Unit] = State[TyperEnvironment, Unit] { state =>
+    val env2 = state.env.clear(types.map(_.name))
+    state.copy(env = env2) -> ()
+  }
+
   /** Adds refinements (type-variable => type) to the typer state in this environment. */
   def addSubstitutions(refines: Substitutions): TyperState[Unit] = State[TyperEnvironment, Unit] { state =>
     (state.copy(substitutions = state.substitutions ++ refines), ())
   }
-  // TODO - causes scala compiler crash, but not needed so far.
-  //def clearRefinements: TyperState[Unit] = State[TyperEnvironment, Unit](x => x.copy(refinements = Map.empty) -> ())
+  /** Clears all used substitutions.  usually necessary between let expressions to limit total inference. */
+  def clearSubstitutions: TyperState[Unit] =
+    State[TyperEnvironment, Unit] { state =>
+      (state.copy(substitutions = Map.empty[Long, Type]), ())
+    }
 
   /** Places some value inside the TyperState Monad, allowing future computations to lookup
     * values in the state.
@@ -52,7 +62,7 @@ object Typer {
 
   // Note:  Use typeAst for stateful version.
   // This starts with state set to the passed in environment.
-  def typeTree(ast: DogeAst, env: Env): TypedAst = {
+  def typeTree(ast: DogeAst, env: TypeEnv): TypedAst = {
     val typerRun =
       for {
         ast <- typeAst(ast)
@@ -63,8 +73,16 @@ object Typer {
   }
 
 
+  // Note:  Use typeAst for stateful version.
+  // This starts with state set to the passed in environment.
+  def typeFull(m: Module, env: TypeEnv): ModuleTyped = {
+    val (_, result) = typeModule(m)(TyperEnvironment(env, Map.empty))
+    result
+  }
+
+
   /** Will compute the type for a given AST. */
-  def typeAst(ref: DogeAst): TyperState[TypedAst] =
+  def typeAst(ref: DogeAst): TyperState[TypedAst] = {
     // Hacky casts for variance, yay dawg.  We could also just map(x => x).
     ref match {
       case id: IdReference => typeIdReference(id).asInstanceOf[TyperState[TypedAst]]
@@ -72,7 +90,27 @@ object Typer {
       case b: BoolLiteral => typeBoolLiteral(b).asInstanceOf[TyperState[TypedAst]]
       case app: ApExpr => typeApply(app).asInstanceOf[TyperState[TypedAst]]
       case let: LetExpr => typeLet(let).asInstanceOf[TyperState[TypedAst]]
+      case m: Module => typeModule(m).asInstanceOf[TyperState[TypedAst]]
+      case l: LambdaExpr => typeLambda(l).asInstanceOf[TyperState[TypedAst]]
     }
+  }
+
+  /** Types a complete module definition, including sharing let expressions. */
+  def typeModule(module: ast.Module): TyperState[ModuleTyped] = {
+    def typeLetAndExpose(l: LetExpr): TyperState[LetExprTyped] =
+       for {
+         lt <- typeLet(l)
+         pl <- pruneAst(lt)
+         plt = pl.asInstanceOf[LetExprTyped] // TODO - Not so hacky
+         _ <- clearSubstitutions
+         // Here we add the type information, and location (a static method on this module) to the typer environment.
+         _ <- addEnvironment(TypeEnvironmentInfo(plt.name, StaticMethod(module.name, plt.name, plt.argTypes, plt.returnType), pl.tpe))
+       } yield plt
+    for {
+      args <- module.definitions.toList.traverse[TyperState, LetExprTyped](typeLetAndExpose)
+    } yield ModuleTyped(module.name, args)
+  }
+
 
   /** Computes type of IntLiteral ASTs. */
   private def typeIntLiteral(ast: IntLiteral): TyperState[IntLiteralTyped] =
@@ -93,8 +131,8 @@ object Typer {
     */
   private def makeFuncForRefinement(argTypes: Seq[TypedAst]): Type = {
     val resultType = newVariable
-    argTypes.foldRight[Type](resultType) { (prev, result) =>
-      Function(prev.tpe, result)
+    argTypes.foldRight[Type](resultType) { (arg, result) =>
+      Function(arg.tpe, result)
     }
   }
 
@@ -120,33 +158,54 @@ object Typer {
 
 
   /**
+   * Will type an inlined lambda expression.
+   */
+  private def typeLambda(ref: LambdaExpr): TyperState[LambdaExprTyped] = {
+    val argToType: Seq[TypeEnvironmentInfo] =
+      ref.argNames.map(n => TypeEnvironmentInfo(n, Argument, newVariable))
+    val argTypes = argToType.map(_.tpe)
+    for {
+      _ <- addEnvironment(argToType:_*)
+      resultAst <- typeAst(ref.defn)
+      pargs <- argTypes.toList.traverse[TyperState, Type](recursivePrune)
+      rtpe <- recursivePrune(resultAst.tpe)
+      _ <- clearEnvironment(argToType.toSeq:_*)
+    } yield LambdaExprTyped(ref.argNames,resultAst, TypeSystem.FunctionN(rtpe, pargs:_*), ref.pos)
+  }
+
+  /**
    * Will type a let tree.  Does not add the let types into the state when complete.
    */
-  private def typeLet(ref: LetExpr): TyperState[TypedAst] = {
-    if(ref.argNames.isEmpty) {
-      // Simple let is just a name assigned to an expression
-      for {
-        result <- typeAst(ref.definition)
-      } yield LetExprTyped(ref.name, Nil, result, result.tpe, ref.pos)
-    } else {
-      // Complicated let is complicated.
-      // Lambda is: name => (argNmaes curried) => definitioin type
-      val argToType: Map[String, Type] =
-        (ref.argNames.map(n => n -> newVariable))(collection.breakOut)
-      // This constructs a functoin type using the variable argument types
-      // and the resulting type of the expression.
-      // Note: We attempt to prune variables after calling this.
-      def makeFuncType(resultType: Type): Type = {
-         ref.argNames.foldRight(resultType) { (argName, result) =>
-           val argType = argToType(argName)
-           Function(argType, result)
-         }
+  private def typeLet(ref: LetExpr): TyperState[LetExprTyped] = {
+    val argToType: Seq[TypeEnvironmentInfo] =
+      ref.types match {
+        case Some(tpe) =>
+          val (argTypes, _) = Function.deconstructArgs(tpe)(ref.argNames.size)
+          ref.argNames.zip(argTypes).map{ case (n,tpe) => TypeEnvironmentInfo(n, Argument, tpe)}
+        case None =>
+          (ref.argNames.map(n => TypeEnvironmentInfo(n, Argument, newVariable)))
       }
-      for {
-        _ <- addEnvironment(argToType.toSeq:_*)
-        resultAst <- typeAst(ref.definition)
-      } yield LetExprTyped(ref.name, ref.argNames, resultAst, makeFuncType(resultAst.tpe), ref.pos)
+    val argTypes = argToType.map(_.tpe)
+    // This will run a unify of the specified result type AND the detected result type to ensure
+    // we close the loop on known types.
+    def unifyKnownResultType(detected: Type): TyperState[Type] = {
+      ref.types match {
+        case Some(tpe) =>
+          val (_, given) = Function.deconstructArgs(tpe)(ref.argNames.size)
+          unify(detected, given, ref.pos)
+        case None => withState(detected)
+      }
     }
+    // TODO - If we know our own type, we can add ourselves to the type environment, in case there is recursion.
+    for {
+      _ <- addEnvironment(argToType.toSeq:_*)
+      resultAst <- typeAst(ref.definition)
+      urtpe <- unifyKnownResultType(resultAst.tpe)
+      // After all unification is complete, then we can prune
+      pargs <- argTypes.toList.traverse[TyperState, Type](recursivePrune)
+      rtpe <- recursivePrune(urtpe)
+      _ <- clearEnvironment(argToType.toSeq:_*)
+    } yield LetExprTyped(ref.name, ref.argNames, resultAst, FunctionN(rtpe, pargs:_*), ref.pos)
   }
 
   /** Prunes type variables out of the ast using the typer state.
@@ -157,7 +216,7 @@ object Typer {
     def pruneRef(id: IdReferenceTyped): TyperState[IdReferenceTyped] = {
       for {
         tpe <- recursivePrune(id.tpe)
-      } yield IdReferenceTyped(id.name, tpe, id.pos)
+      } yield IdReferenceTyped(id.name, TypeEnvironmentInfo(id.env.name, id.env.location, tpe), id.pos)
     }
     def pruneAp(ap: ApExprTyped): TyperState[ApExprTyped] = {
       for {
@@ -173,11 +232,25 @@ object Typer {
       } yield LetExprTyped(l.name, l.argNames, defn, tpe, l.pos)
 
     }
+    def pruneModule(l: ModuleTyped): TyperState[ModuleTyped] = {
+      for {
+        lets <- l.definitions.toList.traverse[TyperState, LetExprTyped](pruneLet)
+      } yield ModuleTyped(l.name, lets)
+    }
+
+    def pruneLambda(l: LambdaExprTyped): TyperState[LambdaExprTyped] = {
+      for {
+        defn <- pruneAst(l.definition)
+        tpe <- recursivePrune(l.tpe)
+      } yield LambdaExprTyped(l.argNames, defn, tpe, l.pos)
+    }
     ast match {
       case let: LetExprTyped => pruneLet(let).asInstanceOf[TyperState[TypedAst]]
       case ap: ApExprTyped => pruneAp(ap).asInstanceOf[TyperState[TypedAst]]
       case ref: IdReferenceTyped => pruneRef(ref).asInstanceOf[TyperState[TypedAst]]
       case l: LiteralTyped => withState(l)
+      case m: ModuleTyped => pruneModule(m).asInstanceOf[TyperState[TypedAst]]
+      case l: LambdaExprTyped => pruneLambda(l).asInstanceOf[TyperState[TypedAst]]
     }
   }
 
@@ -220,7 +293,8 @@ object Typer {
       */
     def substitute(v: TypeVariable, t: Type) = State[TyperEnvironment, Type] { state =>
       if(v != t) {
-        state.copy(substitutions = state.substitutions + (v.id -> t)) -> t
+        val result = state.substitutions + (v.id -> t)
+        state.copy(substitutions = result) -> t
       } else state -> t
     }
     for {

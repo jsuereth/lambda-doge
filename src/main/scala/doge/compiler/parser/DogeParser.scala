@@ -9,9 +9,9 @@ import doge.compiler.ast._
 
 object DogeParser extends RegexParsers {
 
-  def parseProgram(input: String) = {
-    parseAll(rep(expr), input) match {
-      case Success(result,_) => result
+  def parseModule(input: String, name: String): Module = {
+    parseAll(rep(letExpr), input) match {
+      case Success(result,_) => Module(name, result)
       case Failure(msg, next) => sys.error(s"Failure: $msg, at ${next.pos.line}:${next.pos.column}")
       case Error(msg, next) => sys.error(s"Error: $msg, at ${next.pos.line}:${next.pos.column}")
     }
@@ -35,6 +35,51 @@ object DogeParser extends RegexParsers {
     case name if isSafeId(name) => name
   }
 
+  // Helper to convert a parsed type into our AST types.
+  def extractType(ast: ParseTypeAst): TypeSystem.Type = {
+    var vars = Map.empty[String, TypeSystem.TypeVariable]
+    def makeVar(name: String): TypeSystem.Type = {
+      vars.getOrElse(name, {
+        val result = TypeSystem.newVariable
+        vars = vars + (name -> result)
+        result
+      })
+    }
+    def extractImpl(ast: ParseTypeAst): TypeSystem.Type =
+      ast match {
+        case TypeVar(name) => makeVar(name)
+        case TypeCons(id, args) => TypeSystem.TypeConstructor(id, args.map(extractImpl))
+      }
+    extractImpl(ast)
+  }
+
+  lazy val typeParser =
+     typeFull ^^ extractType
+  lazy val typeFull = (typeFunction | typeRaw)
+  // Type parsing. TODO - figuring out functions will be tough..
+  lazy val typeFunction: Parser[ParseTypeAst] =
+    (typeRaw <~ ("=>" | TypeSystem.FUNCTION_TCONS_NAME)) ~ typeFull ^^ {
+      case arg ~ result => TypeCons(TypeSystem.FUNCTION_TCONS_NAME, Seq(arg, result))
+    }
+  lazy val typeRaw: Parser[ParseTypeAst] =
+    (grouped | typeVar | typeConstructor)
+
+  lazy val typeConstructor: Parser[TypeCons] =
+     typeId ~ opt("[" ~> typeFull.* <~ "]") ^^ {
+       case id ~ args => TypeCons(id, args.getOrElse(Nil))
+     }
+  lazy val grouped: Parser[ParseTypeAst] = "(" ~> typeFull <~ ")"
+  lazy val typeVar: Parser[TypeVar] = id ^? {
+    // TODO - handle locales correctly
+    case name if name.forall(_.isLower) => TypeVar(name)
+  }
+  lazy val typeId: Parser[String] = id ^? {
+    // TODO - handle locales correctly
+    case name if !name.forall(_.isLower) => name
+  }
+
+
+
   lazy val idRef: Parser[IdReference] =
     positioned(id map { name => IdReference(name) })
 
@@ -51,23 +96,28 @@ object DogeParser extends RegexParsers {
   lazy val argList: Parser[Seq[String]] =
     SO ~> rep(id)
 
-  // TODO - Real type semantics...
-  lazy val typeList: Parser[Seq[String]] =
-    SUCH ~> rep(id)
+  lazy val typeList: Parser[TypeSystem.Type] =
+    SUCH ~> typeParser
 
 
   lazy val letExpr: Parser[LetExpr] =
     positioned(WOW ~ id ~ opt(typeList) ~ opt(argList) ~ apExpr ^^ {
-       case ignore ~ id ~ types ~ args ~ result => LetExpr(id, types.getOrElse(Nil), args.getOrElse(Nil), result)
+       case ignore ~ id ~ tpe ~ args ~ result => LetExpr(id, tpe, args.getOrElse(Nil), result)
      })
   lazy val apExpr: Parser[ApExpr] =
-    positioned((((MANY | VERY | MUCH) ~> idRef ) ~ rep(expr) <~ EXCL) ^^ {
+    positioned((((VERY | MUCH) ~> idRef ) ~ rep(expr) <~ EXCL) ^^ {
       case id ~ args => ApExpr(id, args)
+    })
+
+  // TODO - optional types for lambda expressions.
+  lazy val lambdaExpr: Parser[LambdaExpr] =
+    positioned(MANY ~ rep(id) ~ apExpr ^^ {
+      case ignore ~ arg ~ defn => LambdaExpr(arg, defn)
     })
 
   lazy val literal: Parser[Literal] = intLiteral | boolLiteral
 
   lazy val expr: Parser[DogeAst] =
-    (letExpr | apExpr | literal | idRef)
+    (letExpr | lambdaExpr | apExpr | literal | idRef)
 
 }
