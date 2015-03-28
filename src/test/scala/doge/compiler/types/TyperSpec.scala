@@ -10,10 +10,15 @@ import org.specs2._
 import doge.compiler.ast._
 import org.specs2.matcher.{Expectable, Matcher}
 import TypeSystem._
+import scala.util.parsing.input.{NoPosition, Position}
 
 class TyperSpec extends Specification { def is = s2"""
 
     This is a specification to check the Parser of the DOGE language
+
+    The Typer should unify
+       simple qualified types                         $unifySimpleQualifiedTypes
+       complex types                                  $unifyComplexQualifiedTypes
 
     The Typer should
 
@@ -30,6 +35,23 @@ class TyperSpec extends Specification { def is = s2"""
       type with specified types                       $useTypesSpecified
       type lambdas                                    $typeLambdas
                                                       """
+
+
+  def unifySimpleQualifiedTypes = {
+    val a = TypeSystem.newVariable
+    val b = TypeSystem.newVariable
+    val numA = TypeSystem.QualifiedType(TypeSystem.IsIn("Num"), a)
+    val numB = TypeSystem.QualifiedType(TypeSystem.IsIn("Num"), b)
+    (numA, numB) must unifyAs(numA)
+  }
+
+  def unifyComplexQualifiedTypes = {
+    val a = TypeSystem.newVariable
+    val b = TypeSystem.newVariable
+    val numA = TypeSystem.QualifiedType(TypeSystem.IsIn("Num"), a)
+    val eqB = TypeSystem.QualifiedType(TypeSystem.IsIn("Eq"), b)
+    (numA, eqB) must unifyAs(numA)
+  }
 
   def failOnSpecifiedTypeMisMatch = {
     LetExpr("bad", Some(Integer), Nil, ApExpr(IdReference("plus"), Seq(IntLiteral(1)))) must not(typeCheck)
@@ -253,6 +275,15 @@ class TyperSpec extends Specification { def is = s2"""
         case t: TypeError => failure(s"Expected $tree got error: $t", tree)
         case t: SyntaxTypeError => failure(s"Expected $tree got error: $t", tree)
       }
+    }
+  }
+
+  def unifyAs(tpe: Type) = new Matcher[(Type, Type)] {
+    def apply[S <: (Type, Type)](tree: Expectable[S]) = {
+      val (a, b) = tree.value
+      val result = Typer.unify(a, b, NoPosition)(TyperEnvironment(defaultTypeEnv, Map.empty))._2
+      if(result == tpe) success("", tree)
+      else failure(s"Failed to unify ($a, $b), expected $tpe, found $result", tree)
     }
   }
 

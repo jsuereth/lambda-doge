@@ -58,9 +58,9 @@ case class TypeEnvironmentInfo(name: String, location: Location, tpe: Type)
 object TypeEnv {
   /** A very dumb environment with only the initial types passed in. */
   def dumbEnvironment(initial: Seq[TypeEnvironmentInfo] = Nil): TypeEnv = new TypeEnv {
-    lazy val lookUp: Map[String, TypeEnvironmentInfo] = initial.groupBy(_.name).mapValues(_.head)
+    lazy val lookUpMap: Map[String, TypeEnvironmentInfo] = initial.groupBy(_.name).mapValues(_.head)
     override def lookup(name: String): TypeEnvironmentInfo = {
-      lookUp.get(name).getOrElse {
+      lookUpMap.get(name).getOrElse {
         throw new TypeError(s"Type not found for term: $name in ${initial.mkString("\n * ", "\n * ", "\n")}")
       }
     }

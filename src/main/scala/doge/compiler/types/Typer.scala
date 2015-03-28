@@ -301,6 +301,13 @@ object Typer {
       pt1 <- prune(t1)
       pt2 <- prune(t2)
       result <- (pt1, pt2) match {
+        case (a: QualifiedType, b: QualifiedType) if a.pred != b.pred =>
+          // TODO - We need the class environment to handle this case.
+          throw SyntaxTypeError(pos, s"Class unfiifcation not supported, attempting to join $a and $b")
+        case (a: QualifiedType, b: QualifiedType) =>
+          for {
+            u <- unify(a.underlying, b.underlying, pos)
+          } yield a.copy(underlying = u)
         // Detected two type variables as equivalent.
         case (a: TypeVariable, b: TypeVariable) =>
           if (a.id < b.id) substitute(b, a)
@@ -331,6 +338,7 @@ object Typer {
   private def occursIn(v: TypeVariable, tpe: Type): Boolean = {
     tpe match {
       case `v` => true
+      case QualifiedType(_, t) => occursIn(v, t)
       case TypeConstructor(name, args) => occursIn(v, args)
       case _ => false
     }

@@ -15,7 +15,7 @@ case class TypeError(msg: String) extends Exception(msg)
   * Concerns:
   *   - Type variable identity is flaky, at best.
   */
-object TypeSystem {
+object  TypeSystem {
 
   // TODO - We need a way to pickle types in/out for modules...
 
@@ -57,6 +57,36 @@ object TypeSystem {
       else if(name == FUNCTION_TCONS_NAME) s"${args(0)} $name ${args(1)}"
       else s"($name ${args.mkString(" ")})"
   }
+
+
+  /** A predicate on a type.  We use this to denote OO inheritance, as well
+    * as our own form of polymorphism via type-traits.
+    */
+  sealed trait TypePredicate
+
+  /**
+   * This predicate implies that a given type must support a given java interface or class.
+   *
+   * Note that this does not imply an "isA" relationship, as it could be a "hasA".
+   * @param fullClassName
+   */
+  final case class IsIn(fullClassName: String) extends TypePredicate {
+    override def toString = s"$fullClassName"
+  }
+
+  /**
+   * A qualified type.   This is some "raw" type that is qualified by some sort of external restrictions.
+   *
+   * For example, the predicate may qualify that the type passed MUST have some external interface, or extend
+   * some java class.
+   */
+  case class QualifiedType(pred: TypePredicate, underlying: Type) extends Type {
+    override def isMonotype: Boolean = underlying.isMonotype
+    override def isSimple = false
+    override def toString = s"($pred $underlying)"
+  }
+
+
 
   val FUNCTION_TCONS_NAME = "→"
   val TUPLE2_TCONS_NAME="Tuple2"
