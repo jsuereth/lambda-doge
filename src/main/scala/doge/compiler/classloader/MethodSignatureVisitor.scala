@@ -26,11 +26,11 @@ class MethodSignatureVisitor extends SignatureVisitor(Opcodes.ASM5) {
   }
   override def visitClassBound(): SignatureVisitor = {
     symPromised.tryFailure(new IllegalStateException(s"Unable to handle java class generics! (class bound)"))
-    null
+    this
   }
   override def visitInterfaceBound(): SignatureVisitor = {
     symPromised.tryFailure(new IllegalStateException(s"Unable to handle java class generics! (interface bound)"))
-    null
+    this
   }
   override def visitParameterType(): SignatureVisitor = {
     arity += 1

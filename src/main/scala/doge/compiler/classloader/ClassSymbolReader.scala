@@ -84,7 +84,17 @@ class ClassSymbolReader extends ClassVisitor(Opcodes.ASM5) {
       val sc = new TypeSignatureVisitor
       sr.accept(sc)
       // TODO - not so ugly here
-      val tpe = sc.tpe.value.get.get
+      val tpe = sc.tpe.value.get match {
+        case Success(t) => t
+          // TODO - When we support java generics, this should go away.
+        // Here we should issue a warning about dropping to the erased types!
+        case Failure(t) if signature != null =>
+          val sr = new SignatureReader(desc)
+          val sv = new TypeSignatureVisitor
+          sr.accept(sv)
+          sv.tpe.value.get.get
+        case Failure(t) => throw t
+      }
       fields ::= JavaField(name, desc, tpe, static)
     }
     null
@@ -97,10 +107,30 @@ class ClassSymbolReader extends ClassVisitor(Opcodes.ASM5) {
       if (name == ClassSymbolReader.STATIC_INIT_NAME) return null
       val sig = if (signature == null) desc else signature
       val sr = new SignatureReader(sig)
-      val sc =
-        new MethodSignatureVisitor
-      sr.accept(sc)
-      val MethodSymbol(tpe, arity) = sc.sym.value.get.get
+      val sc = new MethodSignatureVisitor
+      try sr.accept(sc)
+      catch {
+        case t: Throwable =>
+          System.err.println(s"Failure on ($desc)($signature)")
+          throw t
+      }
+      val MethodSymbol(tpe, arity) = sc.sym.value.get match {
+        case Success(ms) => ms
+        case Failure(t) if signature != null =>
+          // TODO - We shouldn't used the erased signature, but we don't support java generics, completely, yet.
+          // Here we should issue a warning about dropping to the erased types!
+          val sr2 = new SignatureReader(desc)
+          val sv2 = new MethodSignatureVisitor
+          try sr2.accept(sv2)
+          catch {
+            case t: Throwable =>
+              System.err.println(s"Failure on ($desc)($signature)")
+              throw t
+
+          }
+          sv2.sym.value.get.get
+        case Failure(t) => throw t
+      }
       if (ClassSymbolReader.isConstructor(name)) {
         constructors +:= JavaConstructor(desc, tpe, arity)
       } else {
