@@ -5,6 +5,9 @@ import doge.compiler.types.TypeSystem.Type
 import org.objectweb.asm.signature.{SignatureVisitor, SignatureReader}
 import org.objectweb.asm.{MethodVisitor, Opcodes, ClassVisitor, FieldVisitor}
 
+import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.util.{Failure, Success}
+
 
 // Temporary structures we use to, eventually, construct symbols.
 case class JavaClassRef(name: String) {
@@ -78,9 +81,11 @@ class ClassSymbolReader extends ClassVisitor(Opcodes.ASM5) {
       val static = (Opcodes.ACC_STATIC & access) > 0
       val sig = if (signature == null) desc else signature
       val sr = new SignatureReader(sig)
-      val sc = new SignatureConverter
+      val sc = new TypeSignatureVisitor
       sr.accept(sc)
-      fields ::= JavaField(name, desc, sc.tpe.get, static)
+      // TODO - not so ugly here
+      val tpe = sc.tpe.value.get.get
+      fields ::= JavaField(name, desc, tpe, static)
     }
     null
   }
@@ -92,19 +97,15 @@ class ClassSymbolReader extends ClassVisitor(Opcodes.ASM5) {
       if (name == ClassSymbolReader.STATIC_INIT_NAME) return null
       val sig = if (signature == null) desc else signature
       val sr = new SignatureReader(sig)
-      val sc = new SignatureConverter
+      val sc =
+        new MethodSignatureVisitor
       sr.accept(sc)
+      val MethodSymbol(tpe, arity) = sc.sym.value.get.get
       if (ClassSymbolReader.isConstructor(name)) {
-        constructors +:= JavaConstructor(desc, sc.tpe.get, sc.arity.get)
+        constructors +:= JavaConstructor(desc, tpe, arity)
       } else {
         val static = ((Opcodes.ACC_STATIC & access) > 0)
-        (sc.tpe, sc.arity) match {
-          case (Some(tpe), Some(arity)) =>
-            methods +:= JavaMethod(name, desc, tpe, arity, static)
-          case _ =>
-            sys.error(s"Error parsing method $name : $sig, static = $static")
-        }
-
+        methods +:= JavaMethod(name, desc, tpe, arity, static)
       }
     }
     null
@@ -118,121 +119,4 @@ class ClassSymbolReader extends ClassVisitor(Opcodes.ASM5) {
   }
 }
 
-/** Converts a JDK signature into a type in our typesystem. */
-class SignatureConverter extends SignatureVisitor(Opcodes.ASM5) {
 
-  var tpe: Option[Type] = None
-  var state: SigState = BaseState
-  var arity: Option[Int] = None
-
-  sealed trait SigState {
-    def handleType(t: Type): Unit
-    def previous: SigState
-  }
-  object BaseState extends SigState {
-    def handleType(t: Type): Unit = {
-      tpe = Some(t)
-      // TODO - is this correct?
-      state = state.previous
-    }
-    override def previous = BaseState
-    override def toString = "BaseState"
-  }
-  case class FunctionArgState(args: Seq[Type], val previous: SigState) extends SigState {
-    override def handleType(t: Type): Unit = {
-      state = new FunctionArgState(args :+ t, previous)
-    }
-    override def toString = s"FunctionArgState($args) -> $previous"
-  }
-  class FunctionState(params: Seq[Type], val previous: SigState) extends SigState {
-    def handleType(t: Type): Unit = tpe = Some(TypeSystem.FunctionN(t, params:_*))
-    override def toString = s"FunctionState(${params}) -> $previous"
-  }
-  class ArrayState(val previous: SigState) extends SigState {
-    def handleType(t: Type): Unit = previous.handleType(TypeSystem.ArrayType(t))
-    override def toString = s"ArrayState -> $previous"
-  }
-
-  override def visitClassType (name: String): Unit = {
-    // TODO - global help function for this.
-    val realName = name.replaceAllLiterally("/", ".")
-    realName match {
-      case "java.lang.String" => state.handleType(TypeSystem.String)
-      case _ =>
-        val tp = TypeSystem.QualifiedType(TypeSystem.IsIn(realName), TypeSystem.newVariable)
-        //if(realName == s"java.lang.Object") System.err.println(s"Creating qualified type [$tp] for java.lang.Object, state = ${state}")
-        state.handleType(tp)
-    }
-  }
-
-  override def visitParameterType(): SignatureVisitor = {
-    arity = arity.map(_+1) orElse Some(1)
-    state =
-      state match {
-        case x: FunctionArgState => x
-        case other => new FunctionArgState(Nil, state)
-      }
-    this
-  }
-
-  override def visitReturnType(): SignatureVisitor = {
-    state = state match {
-      case x: FunctionArgState => new FunctionState(x.args, x.previous)
-      case _ =>
-        arity = Some(0)
-        new FunctionState(tpe.toSeq, state.previous)
-    }
-    this
-  }
-
-  override def visitFormalTypeParameter(name: String): Unit = {
-    sys.error(s"Unable to handle paramater named $name, Java generics are not supported yet!")
-  }
-
-  override def visitTypeArgument(): Unit = {
-    // Here we've encountered an unbound generic.
-    state.handleType(TypeSystem.newVariable)
-  }
-
-  override def visitTypeArgument(wildcard: Char): SignatureVisitor = {
-    // This is called when we're about to read the generic signature of a type argument.
-    // i.e. the type has some kind of bounds on it.   This is not supported yet.
-    System.err.println(s"Wildcard argumnet $wildcard!, state = $state")
-    wildcard match {
-      case '=' => this
-      case '+' => this
-      case _ => sys.error(s"Unable to handle java generics (? super T)!")
-    }
-
-  }
-
-  override def visitArrayType(): SignatureVisitor = {
-    state = new ArrayState(state)
-    this
-  }
-
-  override def visitBaseType (descriptor: Char): Unit = {
-    val nextTpe =
-    descriptor match {
-      case 'I' => TypeSystem.Integer
-      case 'V' => TypeSystem.Unit
-      case 'Z' => TypeSystem.Bool
-        // TODO - The rest of these built in
-      case 'B' => TypeSystem.Simple("Byte")
-      case 'C' => TypeSystem.Simple("Char")
-      case 'D' => TypeSystem.Simple("Double")
-      case 'F' => TypeSystem.Simple("Float")
-      case 'J' => TypeSystem.Simple("Long")
-      case 'S' => TypeSystem.Simple("Short")
-      case _ => TypeSystem.TypeConstructor(descriptor.toString, Nil)
-    }
-    state.handleType(nextTpe)
-  }
-  override def visitEnd(): Unit = {
-    //System.err.println(s"Visiting end, $state")
-    state match {
-      case x: FunctionArgState => // Ignore
-      case _ => state = state.previous
-    }
-  }
-}
