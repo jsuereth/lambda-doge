@@ -71,7 +71,7 @@ object  TypeSystem {
    * @param fullClassName
    */
   final case class IsIn(fullClassName: String) extends TypePredicate {
-    override def toString = s"$fullClassName"
+    override def toString = s"isIn $fullClassName"
   }
 
   /**
@@ -83,13 +83,14 @@ object  TypeSystem {
   case class QualifiedType(pred: TypePredicate, underlying: Type) extends Type {
     override def isMonotype: Boolean = underlying.isMonotype
     override def isSimple = false
-    override def toString = s"($pred $underlying)"
+    override def toString = s"[$underlying $pred]"
   }
 
 
 
   val FUNCTION_TCONS_NAME = "→"
   val TUPLE2_TCONS_NAME="Tuple2"
+  val ARRAY_NAME="Array"
 
   /** helper to create a function type of From -> To. */
   object Function {
@@ -147,5 +148,6 @@ object  TypeSystem {
   val ListType = TypeConstructor("List", Seq(newVariable))
   val MapType = TypeConstructor("Map", Seq(newVariable, newVariable))
   val Tuple2Type = TypeConstructor(TUPLE2_TCONS_NAME, Seq(newVariable, newVariable))
+  def ArrayType(t: Type): Type = TypeConstructor(ARRAY_NAME, Seq(t))
 }
 
