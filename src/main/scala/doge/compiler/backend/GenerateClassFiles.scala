@@ -137,19 +137,10 @@ object MethodWriter {
     state -> ()
   }
 
-  def getLocalField(s: LocalField) = State[MethodWriterState, Unit] { state =>
-    // First we grab `this`, then we get the argument.
-    state.mv.visitVarInsn(ALOAD,0)
-    state.mv.visitFieldInsn(GETFIELD, s.className, s.field, GenerateClassFiles.getFieldSignature(s.tpe))
-    state -> ()
-  }
-
   object ClosureReference {
     import TypeSystem._
     def unapply(id: IdReferenceTyped): Option[Int] = {
       id.env.location match {
-        case LocalField(_, _, Function(_,_)) => Some(0)
-        case LocalField(_, _, _) => None
         case StaticMethod(_, _, args, Function(_,_)) =>  Some(args.size)
         case StaticMethod(_, _, args, _) =>  None
         case Argument => id.env.tpe match {
@@ -194,8 +185,7 @@ object MethodWriter {
 
       // This is references an expression with no arguments, we just call the method to evaluate it.
       case IdReferenceTyped(_, Location(s @ StaticMethod(_, _, Nil, _ )), _) => callStaticMethod(s)
-      // we're inside a lambda class, and we can just grab a locally captured field.
-      case IdReferenceTyped(_, Location(s : LocalField), _) => getLocalField(s)
+
       // Here we look up method arguments
       case IdReferenceTyped(name, Location(Argument), pos) =>
         for {

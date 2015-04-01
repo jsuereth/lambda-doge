@@ -55,7 +55,7 @@ object  TypeSystem {
       if(args.isEmpty) s"$name"
       else if(name == TUPLE2_TCONS_NAME) s"(${args(0)}, ${args(1)})"
       else if(name == FUNCTION_TCONS_NAME) s"${args(0)} $name ${args(1)}"
-      else s"($name ${args.mkString(" ")})"
+      else s"$name[${args.mkString(",")}]"
   }
 
 

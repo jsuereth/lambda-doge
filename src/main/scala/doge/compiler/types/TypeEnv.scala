@@ -36,10 +36,6 @@ case class StaticMethod(className: String, method: String, args: Seq[Type], resu
   def asFunctionType = TypeSystem.FunctionN(result, args:_*)
   override def toString = s"$className.$method"
 }
-/** Represents something that can be pulled from a local field of a class. */
-case class LocalField(className: String, field: String, tpe: Type) extends Location {
-  override def toString = s"$className.$field"
-}
 case object BuiltIn extends Location {
   override def toString = "built-in"
 }

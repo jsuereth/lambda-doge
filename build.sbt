@@ -5,7 +5,8 @@ scalaVersion := "2.11.1"
 libraryDependencies ++= Seq(
   "org.specs2" %% "specs2" % "2.4" % "test",
   "org.scalaz" %% "scalaz-core" % "7.1.0",
-  "org.ow2.asm" % "asm-debug-all" % "5.0.3"
+  "org.ow2.asm" % "asm-debug-all" % "5.0.3",
+  "com.google.guava" % "guava" % "18.0"
   //"org.ow2.asm" % "asm" % "5.0.3",
   //"org.ow2.asm" % "asm-commons" % "5.0.3"
 )

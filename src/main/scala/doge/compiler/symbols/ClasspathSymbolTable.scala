@@ -4,23 +4,88 @@ import doge.compiler.classloader._
 import doge.compiler.types.TypeSystem
 import doge.compiler.types.TypeSystem.Type
 
+import scala.util.Try
 
 
 object ClasspathSymbolTable {
   // For testing.
   def boot = new ClasspathSymbolTable(ClassFinder.bootClasspath)
 }
+
+object JavaMethodName {
+  def unapply(in: String): Option[(String, String)] = {
+    if(in.contains("#")) {
+      in.split("#") match {
+        case Array(cls, mthd) => Some((cls, mthd))
+        case _ => None
+      }
+    } else None
+  }
+  def apply(cls: String, mthd: String): String = s"${cls}#${mthd}"
+}
+object JavaConstructorName {
+  def unapply(in: String): Option[String] = {
+    in match {
+      case JavaMethodName(cls, "new") => Some(cls)
+      case _ => None
+    }
+  }
+  def apply(cls: String): String = s"${cls}#new"
+}
+
 /**
  * A symbol table which can load all the symbols on demand from java classes.
  */
-class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable{
+class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable {
+  import com.google.common.cache.{LoadingCache,CacheBuilder, CacheLoader}
+
+  // A cache for loaded symbols so we avoid loading the same classfile multiple times, if possible.
+  private val symCache: LoadingCache[String, DogeSymbol] =
+    CacheBuilder.newBuilder().maximumSize(1000L).build(
+      new CacheLoader[String, DogeSymbol] {
+        override def load(key: String): DogeSymbol = {
+          lookupInternal(key).getOrElse(throw new IllegalArgumentException(s"$key is not a symbol in the java classpath."))
+        }
+      }
+    )
   /** Uses the given name to lookup a symbol in the symbol table. */
-  override def lookup(name: String): Option[DogeSymbol] = {
-    // TODO - we should have some kind of pattern for ripping the name into constituent parts for JVM access.
-    // e.g. java.lang.String#length -> references the length method on java.lang.String
-    for {
-      cl <- cf.find(name)
-    } yield new MyJavaClassSymbol(name, cl)
+  override def lookup(name: String): Option[DogeSymbol] = Try(symCache.get(name)).toOption
+
+
+  private def lookupInternal(name: String): Option[DogeSymbol] = {
+
+    def lookupClass(cls: String): Option[JavaClassSymbol] = {
+      for {
+        cl <- cf.find(cls)
+      } yield new MyJavaClassSymbol(cls, cl)
+    }
+    // TODO - We need some kind of mechanism for picking which method in the sea of overloaded methods to
+    //       promote in doge.  "First" is a poor option.
+    name match {
+      case JavaConstructorName(className) =>
+        lookupClass(className).map { c =>
+          c.constructors.sortBy(_.arity) match {
+            case Seq(cons) => cons
+            case Seq() => throw new IllegalArgumentException(s"No constructor found for $c")
+            case Seq(cons, _*) =>
+              // TODO - real warning system
+              System.err.println(s"Warning:  Class $className has more than one constructor.  Picking the first one we see: $c")
+              cons
+          }
+        }
+      case JavaMethodName(className, mthd) =>
+        lookupClass(className) map { c =>
+          // TODO - Maybe we need to look up the parent hierarchy?
+          c.methods collect { case m if m.name == mthd => m } sortBy { _.arity } match {
+            case Seq(m) => m
+            case Seq() => throw new IllegalArgumentException(s"No method/func $mthd found in class $className")
+            case Seq(mthd, _*) =>
+              System.err.println(s"Warning:  Method $name is overloaded! picking the first option we find ($mthd) ")
+              mthd
+          }
+        }
+      case _ => lookupClass(name)
+    }
   }
 
 
@@ -87,6 +152,7 @@ class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable{
       def fix(tpe: Type, arity: Int): Type = tpe match {
         case TypeSystem.Function(l, r) if arity > 0 => TypeSystem.Function(l, fix(r, arity - 1))
         case TypeSystem.Function(l, r) => TypeSystem.FunctionN(l, owner.tpe)
+          // TODO - THis may be wrong, uneeded...
         case x => owner.tpe
           // ANything else is an error!
       }

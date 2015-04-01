@@ -2,6 +2,7 @@ package doge.compiler.std
 
 import doge.compiler.backend.MethodWriterState
 import doge.compiler.std
+import doge.compiler.symbols.{BuiltInSymbolTable, SymbolTable}
 import doge.compiler.types.TypeSystem.{TypeConstructor, Type, newVariable, FunctionN, Function}
 import doge.compiler.types._
 import org.objectweb.asm.signature.SignatureVisitor
@@ -13,28 +14,39 @@ import scalaz._
 object Lists extends BuiltInType {
   val name = "List"
   val NIL = "Nil"
+  val ConsType = {
+    val a = newVariable
+    val lst = TypeConstructor("List", Seq(a))
+    FunctionN(lst, a, lst)
+  }
   val CONS = "cons"
+  val HeadType = {
+    val a = newVariable
+    val lst = TypeConstructor("List", Seq(a))
+    Function(lst, a)
+  }
   val HEAD = "hd"
+  val TailType = {
+    val a = newVariable
+    val lst = TypeConstructor("List", Seq(a))
+    Function(lst, lst)
+  }
   val TAIL = "tl"
 
   override val typeTable: Seq[TypeEnvironmentInfo] = Seq(
     TypeEnvironmentInfo(NIL, BuiltIn, TypeSystem.ListType),
-    TypeEnvironmentInfo(CONS, BuiltIn, {
-      val a = newVariable
-      val lst = TypeConstructor("List", Seq(a))
-      FunctionN(lst, a, lst)
-    }),
-    TypeEnvironmentInfo(HEAD, BuiltIn, {
-      val a = newVariable
-      val lst = TypeConstructor("List", Seq(a))
-      Function(lst, a)
-    }),
-    TypeEnvironmentInfo(TAIL, BuiltIn, {
-      val a = newVariable
-      val lst = TypeConstructor("List", Seq(a))
-      Function(lst, lst)
-    })
+    TypeEnvironmentInfo(CONS, BuiltIn, ConsType),
+    TypeEnvironmentInfo(HEAD, BuiltIn, HeadType),
+    TypeEnvironmentInfo(TAIL, BuiltIn, TailType)
   )
+  override val symbolTable: SymbolTable =
+    new BuiltInSymbolTable(Seq(
+      BuiltInSymbolTable.Function(NIL, TypeSystem.ListType),
+      BuiltInSymbolTable.Function(CONS, ConsType),
+      BuiltInSymbolTable.Function(HEAD, HeadType),
+      BuiltInSymbolTable.Function(TAIL, TailType)
+    ))
+
 
   override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
     case ApExprTyped(i, _, _, _) if i.name == NIL => writeNil
