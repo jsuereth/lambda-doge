@@ -91,6 +91,10 @@ class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable {
 
   /** Represents a java class symbol when we can read the class file. */
   class MyJavaClassSymbol(val name: String, cls: VisitableClass) extends JavaClassSymbol {
+
+    // Cannot change the type of a class.
+    def withType(t: Type): DogeSymbol = ???
+
     private lazy val info: JavaClassInfo = {
       cls.rawSymbols match {
         case Some(sym) => sym
@@ -134,6 +138,15 @@ class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable {
   }
 
   case class MyJavaMethodSymbol(info: JavaMethod, owner: JavaClassSymbol) extends JavaMethodSymbol {
+
+    override def withType(t: Type): MyJavaMethodSymbol = {
+      val self = this
+      new MyJavaMethodSymbol(info, owner) {
+        override def tpe: Type = t
+        override def original: DogeSymbol = self
+      }
+    }
+
     override def name: String = info.name
     override def arity: Int = info.numArgs
     override def tpe: Type =
@@ -145,6 +158,15 @@ class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable {
 
   /** A symbol representing java constructors as functions which take arguments and return the constructed thing. */
   case class MyJavaConstructorSymbol(info: JavaConstructor, owner: JavaClassSymbol) extends JavaConstructorSymbol {
+
+    override def withType(t: Type): MyJavaConstructorSymbol = {
+      val self = this
+      new MyJavaConstructorSymbol(info, owner) {
+        override lazy val tpe: Type = t
+        override def original: DogeSymbol = self
+      }
+    }
+
     override def name: String = s"${owner.name}#new"
     override def arity: Int = info.numArgs
     override lazy val tpe: Type = {
@@ -164,6 +186,15 @@ class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable {
 
   /** Represents a java field. */
   case class MyJavaFieldSymbol(field: JavaField, owner: JavaClassSymbol) extends JavaFieldSymbol {
+
+    override def withType(t: Type): MyJavaFieldSymbol = {
+      val self = this
+      new MyJavaFieldSymbol(field, owner) {
+        override lazy val tpe: Type = t
+        override def original: DogeSymbol = self
+      }
+    }
+
     override def name: String = s"${owner.name}#${field.name}"
     override def isStatic: Boolean = field.static
     override lazy val tpe: Type = {
@@ -178,6 +209,10 @@ class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable {
     * Reading the class file may also fail, issuing an exception at that point in the program.
     */
   case class StubJavaClassSymbol(name: String, isInterface: Boolean) extends JavaClassSymbol {
+    // Just delegate down here, if we're touching types, we're too late not to load.
+    def withType(t: Type): DogeSymbol = loaded.withType(t)
+
+
     private lazy val loaded: JavaClassSymbol = {
       lookup(name) match {
         case Some(x: JavaClassSymbol) => x

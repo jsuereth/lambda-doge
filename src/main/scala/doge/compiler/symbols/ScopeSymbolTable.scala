@@ -18,13 +18,21 @@ object ScopeSymbolTable {
   def apply(symbols: Seq[DogeLanguageSymbol], previous: SymbolTable): SymbolTable =
     new ScopeSymbolTable(symbols, previous)
 
-  case class Argument(name: String, tpe: Type) extends FunctionParameterSymbol
-  case class Function(name: String, argTpes: Seq[Type], returnTpe: Type, ownerClass: String) extends DogeFunctionSymbol
-  object FunctionSymUnpruned {
-    def unapply(sym: DogeSymbol): Option[Function] =
-      sym.original match {
-        case x: Function => Some(x)
-        case _ => None
+  case class Argument(name: String, tpe: Type) extends FunctionParameterSymbol {
+    override def withType(t: Type): FunctionParameterSymbol = {
+      val self = this
+      new Argument(name, t) {
+        override def original: DogeSymbol = self
       }
+    }
+  }
+  case class Function(name: String, argTpes: Seq[Type], returnTpe: Type, ownerClass: String) extends DogeFunctionSymbol {
+    override def withType(t: Type): DogeFunctionSymbol = {
+      val self = this
+      new Function(name, argTpes, returnTpe, ownerClass) {
+        override def tpe: Type = t
+        override def original: DogeSymbol = self
+      }
+    }
   }
 }

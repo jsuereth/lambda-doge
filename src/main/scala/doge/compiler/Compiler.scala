@@ -3,7 +3,7 @@ package doge.compiler
 import java.io.File
 
 import doge.compiler.ast.{LetExpr, DogeAst}
-import doge.compiler.backend.GenerateClassFiles
+import doge.compiler.backend.{AsmDebug, GenerateClassFiles}
 import doge.compiler.closures.ClosureLift
 import doge.compiler.symbols.{ClasspathSymbolTable, SymbolTable, BuiltInSymbolTable}
 import doge.compiler.types._
@@ -44,8 +44,8 @@ object Compiler {
     } finally s.close()
   }
 
-  def compile(input: String, classDirectory: File, name: String, verbose: Boolean): File = {
-    def log(msg: String): Unit = if(verbose) System.err.println(msg)
+  def compile(input: String, classDirectory: File, name: String, verbose: Boolean): File = System.out.synchronized {
+    def log(msg: String): Unit = if(verbose) System.err.synchronized(System.err.println(msg))
     log(s"Compiling [$name]...")
     val parsed = parser.DogeParser.parseModule(input, name)
     log(s"  -- Parsed --\n${parsed}")
@@ -54,6 +54,7 @@ object Compiler {
     val closured = ClosureLift.liftClosures(typed)
     log(s"  -- Closure-Lifted --\n${closured}")
     val clsFile = GenerateClassFiles.makeClassfile(closured, classDirectory)
+    log(s" -- Bytecode --\n${AsmDebug.prettyPrintClass(clsFile)}")
     clsFile
   }
 

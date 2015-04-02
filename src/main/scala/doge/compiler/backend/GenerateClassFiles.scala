@@ -4,7 +4,7 @@ package backend
 import java.lang.invoke.LambdaMetafactory
 
 import doge.compiler.symbols.{FunctionParameterSymbol, DogeSymbol}
-import doge.compiler.symbols.ScopeSymbolTable.{Argument => ArgumentSym, Function => FunctionSym, FunctionSymUnpruned}
+import doge.compiler.symbols.ScopeSymbolTable.{Argument => ArgumentSym, Function => FunctionSym}
 import doge.compiler.std.BuiltInType
 import org.objectweb.asm.Opcodes._
 import org.objectweb.asm._
@@ -59,7 +59,7 @@ object MethodWriter {
   // DUMB boxing (lazy as possible)
   def box(tpe: Type) = State[MethodWriterState, Unit] { mws =>
     tpe match {
-      case Integer =>
+      case TypeSystem.Integer =>
         mws.mv.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;")
       case TypeSystem.Bool =>
         mws.mv.visitMethodInsn(INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;")
@@ -70,12 +70,12 @@ object MethodWriter {
   // DUMB unboxing (lazy as possible)
   def unbox(tpe: Type) = State[MethodWriterState, Unit] { mws =>
     tpe match {
-      case Integer =>
+      case TypeSystem.Integer =>
         mws.mv.visitTypeInsn(CHECKCAST, "java/lang/Integer")
         mws.mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Integer", "intValue", "()I")
       case TypeSystem.Bool =>
         mws.mv.visitTypeInsn(CHECKCAST, "java/lang/Boolean")
-        mws.mv.visitMethodInsn(INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;")
+        mws.mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z")
       case _ => // Ignore, we are already boxed
     }
     mws -> ()
@@ -192,7 +192,7 @@ object MethodWriter {
 
       // This is references an expression with no arguments, we just call the method to evaluate it.
         // TODO - this should handle all static methods, not just doge defined ones
-      case IdReferenceTyped(FunctionSymUnpruned(s: FunctionSym), _) => callStaticMethod(s)
+      case IdReferenceTyped(s: FunctionSym, _) => callStaticMethod(s)
 
       // Here we look up method arguments
       case IdReferenceTyped(sym, pos) if sym.original.isInstanceOf[ArgumentSym] =>
@@ -211,7 +211,7 @@ object MethodWriter {
 
 
       // Here we have a straight up method call with all argumnets known.
-      case ap @ ApExprTyped(IdReferenceTyped(FunctionSymUnpruned(s @ FunctionSym(_, argTypes, _, _)), _), args, tpe, _) if argTypes.length == args.length =>
+      case ap @ ApExprTyped(IdReferenceTyped(s @ FunctionSym(_, argTypes, _, _), _), args, tpe, _) if argTypes.length == args.length =>
         type MWS[A] = State[MethodWriterState, A]
         for {
           _ <- args.toList.traverse[MWS, Unit](placeOnStack)
@@ -320,7 +320,7 @@ object MethodWriter {
     */
   private def methodHandleFromSymbol(sym: DogeSymbol, pos: Position): Handle =
    sym match {
-     case FunctionSymUnpruned(FunctionSym(mthd, args, result, cls)) =>
+     case FunctionSym(mthd, args, result, cls) =>
        new Handle(Opcodes.H_INVOKESTATIC, cls, mthd, GenerateClassFiles.getFunctionSignature(TypeSystem.FunctionN(result, args:_*), args.size))
      case _ => sys.error(s"We don't handle methods of type: ${sym}, at\n ${pos.longString}")
    }
@@ -332,7 +332,7 @@ object MethodWriter {
     for {
       _ <- args.reverse.toList.traverse[S, Unit](placeOnStack)
       _ <- i.sym match {
-        case FunctionSymUnpruned(s: FunctionSym) => callStaticMethod(s)
+        case s: FunctionSym => callStaticMethod(s)
         case _ => sys.error(s"Unable to determine how to invoke method $i")
       }
     } yield ()

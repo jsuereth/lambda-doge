@@ -15,11 +15,10 @@ object BuiltInSymbolTable {
 
 case class BuiltInFunctionSymbolImpl(name: String, tpe: Type) extends BuiltInFunctionSymbol {
   override def toString = s"buitin $name : $tpe}"
-}
-
-/** Attempts to check if a symbol was pruned, but the same as a builtIn. */
-class BuiltInSymExtractor(orig: DogeSymbol) {
-  def unapply(sym: DogeSymbol): Boolean =
-    (sym == orig) ||
-    (sym.isPruned && sym.original == orig)
+  override def withType(t: Type): BuiltInFunctionSymbol = {
+    val self = this
+    new BuiltInFunctionSymbolImpl(name, t) {
+      override def original = self
+    }
+  }
 }

@@ -2,7 +2,7 @@ package doge.compiler.std
 
 import doge.compiler.backend.MethodWriterState
 import doge.compiler.std
-import doge.compiler.symbols.{BuiltInSymExtractor, BuiltInSymbolTable, SymbolTable}
+import doge.compiler.symbols.{BuiltInSymbolTable, SymbolTable}
 import doge.compiler.types.TypeSystem.{TypeConstructor, Type, newVariable, FunctionN, Function}
 import doge.compiler.types._
 import org.objectweb.asm.signature.SignatureVisitor
@@ -15,7 +15,6 @@ object Lists extends BuiltInType {
   val name = "List"
   val NIL = "Nil"
   val NilSym = BuiltInSymbolTable.Function(NIL, TypeSystem.ListType)
-  val NilSymLike = new BuiltInSymExtractor(NilSym)
   val ConsType = {
     val a = newVariable
     val lst = TypeConstructor("List", Seq(a))
@@ -23,7 +22,6 @@ object Lists extends BuiltInType {
   }
   val CONS = "cons"
   val ConsSym = BuiltInSymbolTable.Function(CONS, ConsType)
-  val ConsSymLike = new BuiltInSymExtractor(ConsSym)
   val HeadType = {
     val a = newVariable
     val lst = TypeConstructor("List", Seq(a))
@@ -31,7 +29,6 @@ object Lists extends BuiltInType {
   }
   val HEAD = "hd"
   val HeadSym = BuiltInSymbolTable.Function(HEAD, HeadType)
-  val HeadSymLike = new BuiltInSymExtractor(HeadSym)
   val TailType = {
     val a = newVariable
     val lst = TypeConstructor("List", Seq(a))
@@ -39,7 +36,6 @@ object Lists extends BuiltInType {
   }
   val TAIL = "tl"
   val TailSym = BuiltInSymbolTable.Function(TAIL, TailType)
-  val TailSymLike = new BuiltInSymExtractor(TailSym)
 
   override val symbolTable: SymbolTable =
     new BuiltInSymbolTable(Seq(
@@ -52,7 +48,7 @@ object Lists extends BuiltInType {
 
   override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
     case ApExprTyped(i, _, _, _) if i.name == NIL => writeNil
-    case IdReferenceTyped(NilSymLike(), _)  => writeNil
+    case IdReferenceTyped(sym, _) if sym.original == NilSym => writeNil
     case ApExprTyped(i, Seq(front, lstExpr), tpe, _) if i.name == CONS => writeCons(front, lstExpr)
     case ApExprTyped(i, Seq(lstExpr), tpe, _) if i.name == HEAD => writeHead(lstExpr)
     case ApExprTyped(i, Seq(lstExpr), tpe, _) if i.name == TAIL => writeTail(lstExpr)

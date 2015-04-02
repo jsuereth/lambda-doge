@@ -1,7 +1,7 @@
 package doge.compiler.types
 
 import doge.compiler.ast
-import doge.compiler.symbols.{PrunedSymbol, SymbolTable, DogeLanguageSymbol, ScopeSymbolTable}
+import doge.compiler.symbols.{SymbolTable, DogeLanguageSymbol, ScopeSymbolTable}
 import ScopeSymbolTable.{Function => FunctionSym, Argument => ArgumentSym}
 
 import scala.util.parsing.input.Position
@@ -233,7 +233,7 @@ object Typer {
     def pruneRef(id: IdReferenceTyped): TyperState[IdReferenceTyped] = {
       for {
         tpe <- recursivePrune(id.tpe)
-      } yield IdReferenceTyped(PrunedSymbol(id.sym, tpe), id.pos)
+      } yield IdReferenceTyped(id.sym.withType(tpe), id.pos)
     }
     def pruneAp(ap: ApExprTyped): TyperState[ApExprTyped] = {
       for {

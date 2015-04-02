@@ -22,7 +22,6 @@ trait FullCompilerSpec extends Specification {
       } catch {
         case t: TypeError => failure(s"Type error $t in [${program.value}]", program)
         case t: NoTestMethodException => failure(s"Name not found: test in [${program.value}]", program)
-
       }
     }
   }
