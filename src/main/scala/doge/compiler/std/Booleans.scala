@@ -19,7 +19,6 @@ object Booleans extends BuiltInType {
 
   val IF = "ifs"
 
-
   val ifType = {
     val result = TypeSystem.newVariable
     TypeSystem.FunctionN(
@@ -29,11 +28,6 @@ object Booleans extends BuiltInType {
       result
     )
   }
-
-  override val typeTable: Seq[TypeEnvironmentInfo] =
-    Seq(
-      TypeEnvironmentInfo(IF, BuiltIn, ifType)
-    )
 
   override val symbolTable: SymbolTable =
      new BuiltInSymbolTable(Seq(BuiltInSymbolTable.Function(IF, ifType)))

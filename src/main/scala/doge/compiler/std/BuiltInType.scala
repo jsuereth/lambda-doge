@@ -4,7 +4,6 @@ import doge.compiler.backend.MethodWriterState
 import doge.compiler.symbols.SymbolTable
 import doge.compiler.types.TypeSystem.Type
 import doge.compiler.types.TypedAst
-import doge.compiler.types.TypeEnvironmentInfo
 import org.objectweb.asm.signature.SignatureVisitor
 
 import scalaz._
@@ -18,8 +17,6 @@ import scalaz._
   *
   */
 trait BuiltInType {
-  // TODO - This should be rmeoved for symbol tables.
-  def typeTable: Seq[TypeEnvironmentInfo] = Nil
 
   /**
    * This is a method which knows how to generate the bytecode for built-in functions.  This method is
@@ -61,7 +58,6 @@ object BuiltInType {
     * for all built-in types in the entire language.
     */
   def join(l: BuiltInType, r: BuiltInType): BuiltInType = new BuiltInType {
-    override val typeTable = (l.typeTable ++ r.typeTable)
     override val backend = (l.backend orElse r.backend)
     override val visitSignatureInternal = (l.visitSignatureInternal orElse r.visitSignatureInternal)
     override val symbolTable: SymbolTable =

@@ -2,7 +2,7 @@ package doge.compiler
 package std
 
 
-import doge.compiler.symbols.{BuiltInSymbolTable, SymbolTable}
+import doge.compiler.symbols.{BuiltInSymExtractor, DogeSymbol, BuiltInSymbolTable, SymbolTable}
 import org.objectweb.asm.Opcodes._
 import doge.compiler.types._
 import org.objectweb.asm.signature.SignatureVisitor
@@ -25,31 +25,26 @@ object DogeTuple2 extends BuiltInType {
     val b = newVariable
     Function(TypeConstructor(name, Seq(a, b)), a)
   }
+  val FirstSym = BuiltInSymbolTable.Function(FIRST, FirstType)
+  val FirstSymLike = new BuiltInSymExtractor(FirstSym)
   val SECOND = "snd"
   val SecondType = {
     val a = newVariable
     val b = newVariable
     Function(TypeConstructor(name, Seq(a, b)), b)
   }
+  val SecondSym = BuiltInSymbolTable.Function(SECOND, SecondType)
+  val SecondSymLike = new BuiltInSymExtractor(SecondSym)
   val CONSTRUCTOR = "tuple2"
   val ConstructorType = {
     val a = newVariable
     val b = newVariable
     FunctionN(TypeConstructor(name, Seq(a, b)), a, b)
   }
-
-
-  // Typing table, for running typer.
-  override val typeTable = Seq[TypeEnvironmentInfo](
-    TypeEnvironmentInfo(FIRST, BuiltIn, FirstType),
-    TypeEnvironmentInfo(SECOND, BuiltIn, SecondType),
-    TypeEnvironmentInfo(CONSTRUCTOR, BuiltIn, ConstructorType)
-  )
+  val ConstructorSym = BuiltInSymbolTable.Function(CONSTRUCTOR, ConstructorType)
+  val ConstructorSymLike = new BuiltInSymExtractor(ConstructorSym)
   override val symbolTable: SymbolTable =
-    new BuiltInSymbolTable(Seq(
-      BuiltInSymbolTable.Function(FIRST, FirstType),
-      BuiltInSymbolTable.Function(SECOND, SecondType),
-      BuiltInSymbolTable.Function(CONSTRUCTOR, ConstructorType)))
+    new BuiltInSymbolTable(Seq(FirstSym, SecondSym, ConstructorSym))
 
 
   override val visitSignatureInternal: PartialFunction[(SignatureVisitor, Type), Unit] = {
@@ -59,9 +54,9 @@ object DogeTuple2 extends BuiltInType {
 
   // Actual implementation of the methods exposed.
   override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
-    case ApExprTyped(IdReferenceTyped(CONSTRUCTOR, _, _), Seq(left, right), tpe, _) => constructorImpl(left, right)
-    case ApExprTyped(IdReferenceTyped(FIRST, _, _), Seq(tuple), tpe, _) => fstMethodImpl(tuple)
-    case ApExprTyped(IdReferenceTyped(SECOND, _, _), Seq(tuple), tpe, _) => fstMethodImpl(tuple)
+    case ApExprTyped(IdReferenceTyped(ConstructorSymLike(), _), Seq(left, right), tpe, _) => constructorImpl(left, right)
+    case ApExprTyped(IdReferenceTyped(FirstSymLike(), _), Seq(tuple), tpe, _) => fstMethodImpl(tuple)
+    case ApExprTyped(IdReferenceTyped(SecondSymLike(), _), Seq(tuple), tpe, _) => fstMethodImpl(tuple)
   }
 
   private def fstMethodImpl(tuple: TypedAst): State[MethodWriterState, Unit] = {

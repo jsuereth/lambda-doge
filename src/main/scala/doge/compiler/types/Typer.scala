@@ -1,13 +1,15 @@
 package doge.compiler.types
 
 import doge.compiler.ast
+import doge.compiler.symbols.{PrunedSymbol, SymbolTable, DogeLanguageSymbol, ScopeSymbolTable}
+import ScopeSymbolTable.{Function => FunctionSym, Argument => ArgumentSym}
 
 import scala.util.parsing.input.Position
 import TypeSystem._
 import Typer.Substitutions
 import doge.compiler.ast._
 import scalaz._
-import Scalaz._
+import scalaz.Scalaz._
 
 case class SyntaxTypeError(pos: Position, msg: String) extends Exception(
   s"$msg at\n${pos.longString}"
@@ -18,24 +20,32 @@ case class SyntaxTypeError(pos: Position, msg: String) extends Exception(
   * See the companion objects for access to type state internals.
   */
 case class TyperEnvironment(
-  env: TypeEnv,
+  scope: SymbolTable,
   substitutions: Substitutions
 )
 object TyperEnvironment {
   type TyperState[A] = State[TyperEnvironment, A]
 
   /** Grabs the current type environment (scope) for the typer. */
-  def env: TyperState[TypeEnv] = State[TyperEnvironment, TypeEnv] { state => state -> state.env }
+  def scope: TyperState[SymbolTable] = State[TyperEnvironment, SymbolTable] { state => state -> state.scope }
   /** Grabs the current known variable refinements in the current typer run. */
   def substitutions: TyperState[Substitutions] = State[TyperEnvironment, Substitutions] { state => state -> state.substitutions }
   /** Adds term->type associations to the environment in this typer. */
-  def addEnvironment(types: TypeEnvironmentInfo*): TyperState[Unit] = State[TyperEnvironment, Unit] {
+  def pushScope(syms: DogeLanguageSymbol*): TyperState[Unit] = State[TyperEnvironment, Unit] {
     case x: TyperEnvironment =>
-      x.copy(env = x.env.withLocal(types:_*)) -> ()
+      val next = ScopeSymbolTable(syms, x.scope)
+      x.copy(scope = next) -> ()
   }
-  def clearEnvironment(types: TypeEnvironmentInfo*): TyperState[Unit] = State[TyperEnvironment, Unit] { state =>
-    val env2 = state.env.clear(types.map(_.name))
-    state.copy(env = env2) -> ()
+  /** Pops the current scope/symbol stack. */
+  def popScope(): TyperState[Unit] = State[TyperEnvironment, Unit] { state =>
+    state.scope match {
+      case x: ScopeSymbolTable =>
+        state.copy(scope = x.previous) -> ()
+      case _ =>
+        // TODO - Maybe we should just not pop in this instance?
+        sys.error(s"Typer logic error!  Attempting to pop scope when no more scope is left.")
+    }
+
   }
 
   /** Adds refinements (type-variable => type) to the typer state in this environment. */
@@ -62,20 +72,20 @@ object Typer {
 
   // Note:  Use typeAst for stateful version.
   // This starts with state set to the passed in environment.
-  def typeTree(ast: DogeAst, env: TypeEnv): TypedAst = {
+  def typeTree(ast: DogeAst, symbols: SymbolTable): TypedAst = {
     val typerRun =
       for {
         ast <- typeAst(ast)
         cleaned <- pruneAst(ast)
       } yield cleaned
-    val (_, result) = typerRun(TyperEnvironment(env, Map.empty))
+    val (_, result) = typerRun(TyperEnvironment(symbols, Map.empty))
     result
   }
 
 
   // Note:  Use typeAst for stateful version.
   // This starts with state set to the passed in environment.
-  def typeFull(m: Module, env: TypeEnv): ModuleTyped = {
+  def typeFull(m: Module, env: SymbolTable): ModuleTyped = {
     val (_, result) = typeModule(m)(TyperEnvironment(env, Map.empty))
     result
   }
@@ -103,8 +113,9 @@ object Typer {
          pl <- pruneAst(lt)
          plt = pl.asInstanceOf[LetExprTyped] // TODO - Not so hacky
          _ <- clearSubstitutions
-         // Here we add the type information, and location (a static method on this module) to the typer environment.
-         _ <- addEnvironment(TypeEnvironmentInfo(plt.name, StaticMethod(module.name, plt.name, plt.argTypes, plt.returnType), pl.tpe))
+         // Here we add the type information, and location (a static method on this module) to the scope
+         // TODO - instead of repeatedly pushing scope through the module, maybe we should instead create a new scope?
+         _ <- pushScope(FunctionSym(plt.name, plt.argTypes, plt.returnType, module.name))
        } yield plt
     for {
       args <- module.definitions.toList.traverse[TyperState, LetExprTyped](typeLetAndExpose)
@@ -122,8 +133,13 @@ object Typer {
   private def typeIdReference(ref: IdReference): TyperState[IdReferenceTyped] =
     for {
       id <- withState(ref)
-      e <- env
-    } yield IdReferenceTyped(id.name, e.lookup(id.name), ref.pos)
+      s <- scope
+    } yield s.lookup(id.name) match {
+      case Some(sym) => IdReferenceTyped(sym, ref.pos)
+      case None => throw new SyntaxTypeError(id.pos, s"Could not find symbol: ${id.name}, at ${id.pos}")
+    }
+
+
 
   /** Creates a new function type which is a curried
     * application of all types in the argument AST and a
@@ -161,15 +177,16 @@ object Typer {
    * Will type an inlined lambda expression.
    */
   private def typeLambda(ref: LambdaExpr): TyperState[LambdaExprTyped] = {
-    val argToType: Seq[TypeEnvironmentInfo] =
-      ref.argNames.map(n => TypeEnvironmentInfo(n, Argument, newVariable))
+    // Here we create new variable scope and use it for the remaining type-checking activities.
+    val argToType: Seq[DogeLanguageSymbol] =
+      ref.argNames.map(n => ArgumentSym(n, newVariable))
     val argTypes = argToType.map(_.tpe)
     for {
-      _ <- addEnvironment(argToType:_*)
+      _ <- pushScope(argToType:_*)
       resultAst <- typeAst(ref.defn)
       pargs <- argTypes.toList.traverse[TyperState, Type](recursivePrune)
       rtpe <- recursivePrune(resultAst.tpe)
-      _ <- clearEnvironment(argToType.toSeq:_*)
+      _ <- popScope()
     } yield LambdaExprTyped(ref.argNames,resultAst, TypeSystem.FunctionN(rtpe, pargs:_*), ref.pos)
   }
 
@@ -177,13 +194,13 @@ object Typer {
    * Will type a let tree.  Does not add the let types into the state when complete.
    */
   private def typeLet(ref: LetExpr): TyperState[LetExprTyped] = {
-    val argToType: Seq[TypeEnvironmentInfo] =
+    val argToType: Seq[DogeLanguageSymbol] =
       ref.types match {
         case Some(tpe) =>
           val (argTypes, _) = Function.deconstructArgs(tpe)(ref.argNames.size)
-          ref.argNames.zip(argTypes).map{ case (n,tpe) => TypeEnvironmentInfo(n, Argument, tpe)}
+          ref.argNames.zip(argTypes).map{ case (n,tpe) => ArgumentSym(n, tpe)}
         case None =>
-          (ref.argNames.map(n => TypeEnvironmentInfo(n, Argument, newVariable)))
+          (ref.argNames.map(n => ArgumentSym(n, newVariable)))
       }
     val argTypes = argToType.map(_.tpe)
     // This will run a unify of the specified result type AND the detected result type to ensure
@@ -198,14 +215,14 @@ object Typer {
     }
     // TODO - If we know our own type, we can add ourselves to the type environment, in case there is recursion.
     for {
-      _ <- addEnvironment(argToType.toSeq:_*)
+      _ <- pushScope(argToType.toSeq:_*)
       resultAst <- typeAst(ref.definition)
       urtpe <- unifyKnownResultType(resultAst.tpe)
       // After all unification is complete, then we can prune
       pargs <- argTypes.toList.traverse[TyperState, Type](recursivePrune)
       rtpe <- recursivePrune(urtpe)
-      _ <- clearEnvironment(argToType.toSeq:_*)
-    } yield LetExprTyped(ref.name, ref.argNames, resultAst, FunctionN(rtpe, pargs:_*), ref.pos)
+      _ <- popScope()
+    } yield LetExprTyped(ref.name, ref.argNames, FunctionN(rtpe, pargs:_*), resultAst, ref.pos)
   }
 
   /** Prunes type variables out of the ast using the typer state.
@@ -216,7 +233,7 @@ object Typer {
     def pruneRef(id: IdReferenceTyped): TyperState[IdReferenceTyped] = {
       for {
         tpe <- recursivePrune(id.tpe)
-      } yield IdReferenceTyped(id.name, TypeEnvironmentInfo(id.env.name, id.env.location, tpe), id.pos)
+      } yield IdReferenceTyped(PrunedSymbol(id.sym, tpe), id.pos)
     }
     def pruneAp(ap: ApExprTyped): TyperState[ApExprTyped] = {
       for {
@@ -229,7 +246,7 @@ object Typer {
       for {
         tpe <- recursivePrune(l.tpe)
         defn <- pruneAst(l.definition)
-      } yield LetExprTyped(l.name, l.argNames, defn, tpe, l.pos)
+      } yield LetExprTyped(l.name, l.argNames, tpe, defn, l.pos)
 
     }
     def pruneModule(l: ModuleTyped): TyperState[ModuleTyped] = {
@@ -271,7 +288,13 @@ object Typer {
         for {
           targs <- args.toList.traverse[TyperState, Type](recursivePrune)
         } yield TypeConstructor(name, targs)
-      case x => prune(t)
+      case x =>
+        for {
+          nextTpe <- prune(t)
+          // Here if we did any substitutions, we may need to recurse again, because our substitutions may not be final.
+          // We can probably consider this a bug in the substitution state, where we should update that state more effectively/transitively.
+          finalTpe <- if(nextTpe != t) recursivePrune(nextTpe) else withState(nextTpe)
+        } yield finalTpe
     }
 
 

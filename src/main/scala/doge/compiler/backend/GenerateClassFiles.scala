@@ -3,6 +3,8 @@ package backend
 
 import java.lang.invoke.LambdaMetafactory
 
+import doge.compiler.symbols.{FunctionParameterSymbol, DogeSymbol}
+import doge.compiler.symbols.ScopeSymbolTable.{Argument => ArgumentSym, Function => FunctionSym, FunctionSymUnpruned}
 import doge.compiler.std.BuiltInType
 import org.objectweb.asm.Opcodes._
 import org.objectweb.asm._
@@ -132,23 +134,28 @@ object MethodWriter {
 
 
   /** Wrotes an invokestatic call, all arguments must already be on the stack. */
-  def callStaticMethod(m: StaticMethod) = State[MethodWriterState, Unit] { state =>
-    state.mv.visitMethodInsn(INVOKESTATIC, m.className, m.method, GenerateClassFiles.getMethodSignature(m.args, m.result))
+  def callStaticMethod(m: FunctionSym) = State[MethodWriterState, Unit] { state =>
+    state.mv.visitMethodInsn(INVOKESTATIC, m.ownerClass, m.name, GenerateClassFiles.getMethodSignature(m.argTpes, m.returnTpe))
     state -> ()
   }
 
   object ClosureReference {
     import TypeSystem._
     def unapply(id: IdReferenceTyped): Option[Int] = {
-      id.env.location match {
-        case StaticMethod(_, _, args, Function(_,_)) =>  Some(args.size)
-        case StaticMethod(_, _, args, _) =>  None
-        case Argument => id.env.tpe match {
-          case Function(_,_) => Some(0)
-          case _ => None
-        }
-        case BuiltIn => None
+      def unapplySym(sym: DogeSymbol): Option[Int] =
+      // TODO - Make better symbol table readers here, and handle java symbols.
+      sym.original match {
+        case FunctionSym(_, argTpes, Function(_,_), _) => Some(argTpes.size)
+        case x: FunctionSym => None
+        case x: FunctionParameterSymbol =>
+          // Note - we check the underlying type to see if it's aparamter, but we need to check the *inferred* (final)
+          sym.tpe match {
+            case Function(_,_) => Some(0)
+            case _ => None
+          }
+        case x if x.isBuiltIn => None
       }
+      unapplySym(id.sym)
     }
   }
   // TODO - Somehow this isn't catching arguments that are closures...
@@ -184,15 +191,16 @@ object MethodWriter {
       // Now we handle simple "reference" type lookups.
 
       // This is references an expression with no arguments, we just call the method to evaluate it.
-      case IdReferenceTyped(_, Location(s @ StaticMethod(_, _, Nil, _ )), _) => callStaticMethod(s)
+        // TODO - this should handle all static methods, not just doge defined ones
+      case IdReferenceTyped(FunctionSymUnpruned(s: FunctionSym), _) => callStaticMethod(s)
 
       // Here we look up method arguments
-      case IdReferenceTyped(name, Location(Argument), pos) =>
+      case IdReferenceTyped(sym, pos) if sym.original.isInstanceOf[ArgumentSym] =>
         for {
-          idx <- localVarIndex(name)
+          idx <- localVarIndex(sym.name)
           _ <- idx match {
             case Some(i) => loadLocalVariable(ast.tpe, i)
-            case None => sys.error(s"Unable to find argument [$name] when generating method bytecode at:\n$pos.longString}")
+            case None => sys.error(s"Unable to find argument [${sym.name}] when generating method bytecode at:\n$pos.longString}")
           }
         } yield ()
 
@@ -203,7 +211,7 @@ object MethodWriter {
 
 
       // Here we have a straight up method call with all argumnets known.
-      case ap @ ApExprTyped(IdReferenceTyped(_, Location(s @ StaticMethod(_, _, argTypes, _)), _), args, tpe, _) if argTypes.length == args.length =>
+      case ap @ ApExprTyped(IdReferenceTyped(FunctionSymUnpruned(s @ FunctionSym(_, argTypes, _, _)), _), args, tpe, _) if argTypes.length == args.length =>
         type MWS[A] = State[MethodWriterState, A]
         for {
           _ <- args.toList.traverse[MWS, Unit](placeOnStack)
@@ -286,7 +294,7 @@ object MethodWriter {
       _ <- rawInsn { mv =>
         import org.objectweb.asm.commons.GeneratorAdapter
         // A method handle on the function we're lifting into a closure.
-        val delegateMethodHandle: Handle = methodHandleFromEnvironment(id.env, pos)
+        val delegateMethodHandle: Handle = methodHandleFromSymbol(id.sym, pos)
         // TODO - Will we always be returning an object?  Perhaps
         val inputType: org.objectweb.asm.Type = org.objectweb.asm.Type.getType("(Ljava/lang/Object;)Ljava/lang/Object;")
         // TODO - This needs to be the type of the resulting closure.
@@ -308,14 +316,13 @@ object MethodWriter {
     } yield ()
   }
 
-  /** Generates a method handle from the TypeEnvironmentInfo references, or throws an error if the type does not
-    * refer to a valid method.
+  /** Generates a method handle from the symbol we have.
     */
-  private def methodHandleFromEnvironment(env: TypeEnvironmentInfo, pos: Position): Handle =
-   env.location match {
-     case StaticMethod(cls, mthd, args, result) =>
+  private def methodHandleFromSymbol(sym: DogeSymbol, pos: Position): Handle =
+   sym match {
+     case FunctionSymUnpruned(FunctionSym(mthd, args, result, cls)) =>
        new Handle(Opcodes.H_INVOKESTATIC, cls, mthd, GenerateClassFiles.getFunctionSignature(TypeSystem.FunctionN(result, args:_*), args.size))
-     case _ => sys.error(s"We don't handle methods of type: ${env}, at\n ${pos.longString}")
+     case _ => sys.error(s"We don't handle methods of type: ${sym}, at\n ${pos.longString}")
    }
 
   /** calls a function with a given reference and set of arguments. */
@@ -324,8 +331,8 @@ object MethodWriter {
     type S[A] = State[MethodWriterState, A]
     for {
       _ <- args.reverse.toList.traverse[S, Unit](placeOnStack)
-      _ <- i.env.location match {
-        case s: StaticMethod => callStaticMethod(s)
+      _ <- i.sym match {
+        case FunctionSymUnpruned(s: FunctionSym) => callStaticMethod(s)
         case _ => sys.error(s"Unable to determine how to invoke method $i")
       }
     } yield ()

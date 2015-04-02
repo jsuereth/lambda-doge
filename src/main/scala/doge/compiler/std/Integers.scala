@@ -15,22 +15,16 @@ import scalaz._
 object Integers extends BuiltInType {
   def name: String = "Integer"
 
-  val PLUS = "Plus"
   val BinaryIntOp = TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer))
+  val PLUS = "Plus"
+  val PlusSym = BuiltInSymbolTable.Function(PLUS, BinaryIntOp)
   val MINUS = "Minus"
   val MUL = "Multiply"
   val DIV = "Divide"
 
-  override val typeTable: Seq[TypeEnvironmentInfo] =
-    Seq(
-      TypeEnvironmentInfo(PLUS, BuiltIn, BinaryIntOp),
-      TypeEnvironmentInfo(MINUS, BuiltIn, BinaryIntOp),
-      TypeEnvironmentInfo(MUL, BuiltIn, BinaryIntOp),
-      TypeEnvironmentInfo(DIV, BuiltIn, BinaryIntOp)
-    )
   override val symbolTable: SymbolTable =
     new BuiltInSymbolTable(Seq(
-      BuiltInSymbolTable.Function(PLUS, BinaryIntOp),
+      PlusSym,
       BuiltInSymbolTable.Function(MINUS, BinaryIntOp),
       BuiltInSymbolTable.Function(MUL, BinaryIntOp),
       BuiltInSymbolTable.Function(DIV, BinaryIntOp)))

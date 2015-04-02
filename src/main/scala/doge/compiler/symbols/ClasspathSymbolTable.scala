@@ -145,6 +145,7 @@ class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable {
 
   /** A symbol representing java constructors as functions which take arguments and return the constructed thing. */
   case class MyJavaConstructorSymbol(info: JavaConstructor, owner: JavaClassSymbol) extends JavaConstructorSymbol {
+    override def name: String = s"${owner.name}#new"
     override def arity: Int = info.numArgs
     override lazy val tpe: Type = {
       // we need to replace the last function type of "Unit" with owner.tpe. THis converts from raw JVM signature to
@@ -163,13 +164,13 @@ class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable {
 
   /** Represents a java field. */
   case class MyJavaFieldSymbol(field: JavaField, owner: JavaClassSymbol) extends JavaFieldSymbol {
-    override def name: String = field.name
+    override def name: String = s"${owner.name}#${field.name}"
     override def isStatic: Boolean = field.static
     override lazy val tpe: Type = {
       if(isStatic) field.tpe
       else TypeSystem.Function(owner.tpe, field.tpe)
     }
-    override def toString: String = s"${if(isStatic) "value" else "field" } $name: $tpe"
+    override def toString: String = s"${if(isStatic) "value" else "field" } ${field.name}: $tpe"
   }
 
   /** This symbol is used to stub for classes we do not want to read UNLESS absolutely necessary.
