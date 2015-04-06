@@ -49,7 +49,7 @@ object Compiler {
     log(s"Compiling [$name]...")
     val parsed = parser.DogeParser.parseModule(input, name)
     log(s"  -- Parsed --\n${parsed}")
-    val typed = Typer.typeFull(parsed, builtInTypes)
+    val typed = Typer.typeFull(parsed, buildInAndJdkTypes)
     log(s"  -- Typed--\n${typed}")
     val closured = ClosureLift.liftClosures(typed)
     log(s"  -- Closure-Lifted --\n${closured}")
@@ -69,9 +69,9 @@ object Compiler {
       import pos._
       lineContents.take(column - 1).map { x => if (x == '\t') x else ' '} + "^"
     }*/
-    val verbose = args.exists(_ == "-v")
+    val verbose = args.exists(_ == "-v") || args.exists(_ == "--verbose")
 
-    for(arg <- args.filterNot(_ == "-v")) {
+    for(arg <- args.filterNot(_ == "-v").filterNot(_ == "--verbose")) {
       val f = new File(arg)
       try compile(f, verbose)
       catch {

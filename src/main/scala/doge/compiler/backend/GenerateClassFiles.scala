@@ -2,8 +2,8 @@ package doge.compiler
 package backend
 
 import java.lang.invoke.LambdaMetafactory
-
-import doge.compiler.symbols.{FunctionParameterSymbol, DogeSymbol}
+import doge.compiler.classloader.ClassSymbolReader
+import doge.compiler.symbols._
 import doge.compiler.symbols.ScopeSymbolTable.{Argument => ArgumentSym, Function => FunctionSym}
 import doge.compiler.std.BuiltInType
 import org.objectweb.asm.Opcodes._
@@ -139,8 +139,37 @@ object MethodWriter {
     state -> ()
   }
 
+  /** Creates a new java instance on the stack of a class, without calling any constructor. */
+  def createNewInstance(s: JavaConstructorSymbol) = State[MethodWriterState, Unit] { state =>
+    state.mv.visitTypeInsn(Opcodes.NEW, s.owner.jvmName)
+    state -> ()
+  }
+
+  /** Writes the java constructor call. */
+  def callJavaConstructor(s: JavaConstructorSymbol) = State[MethodWriterState, Unit] { state =>
+    state.mv.visitMethodInsn(Opcodes.INVOKESPECIAL, s.owner.jvmName, ClassSymbolReader.CONSTRUCTOR_NAME, s.jvmDesc)
+    state -> ()
+  }
+
+  /** Writes a jave method call.  Either INVOKESTATIC, INVOKEINTERFACE or INVOKEVIRTUAL. */
+  def callJavaMethod(s: JavaMethodSymbol) = State[MethodWriterState, Unit] { state =>
+    val op =
+      if(s.isStatic) Opcodes.INVOKESTATIC
+      else {
+        // TODO - invoke interface, or invoke special
+        if(s.owner.isInterface) Opcodes.INVOKEINTERFACE
+        else Opcodes.INVOKEVIRTUAL
+      }
+    state.mv.visitMethodInsn(op, s.owner.jvmName, s.name, s.jvmDesc)
+    state -> ()
+  }
+
+  /** The is an extractor to determine the number of arguments to call the raw method.
+    *
+    */
   object ClosureReference {
     import TypeSystem._
+    /** Given an id (and its symbol) determine how many physical arguments the JVM type takes. */
     def unapply(id: IdReferenceTyped): Option[Int] = {
       def unapplySym(sym: DogeSymbol): Option[Int] =
       // TODO - Make better symbol table readers here, and handle java symbols.
@@ -148,12 +177,16 @@ object MethodWriter {
         case FunctionSym(_, argTpes, Function(_,_), _) => Some(argTpes.size)
         case x: FunctionSym => None
         case x: FunctionParameterSymbol =>
-          // Note - we check the underlying type to see if it's aparamter, but we need to check the *inferred* (final)
+          // Note - we check the underlying type to see if it's paaramter, but we need to check the *inferred* (final)
           sym.tpe match {
             case Function(_,_) => Some(0)
             case _ => None
           }
         case x if x.isBuiltIn => None
+        // Here we need to handle java types
+        case x: JavaConstructorSymbol => Some(x.arity)
+        case x: JavaFieldSymbol => if(x.isStatic) None else Some(1)
+        case x: JavaMethodSymbol => Some(x.arity)
       }
       unapplySym(id.sym)
     }
@@ -193,6 +226,14 @@ object MethodWriter {
       // This is references an expression with no arguments, we just call the method to evaluate it.
         // TODO - this should handle all static methods, not just doge defined ones
       case IdReferenceTyped(s: FunctionSym, _) => callStaticMethod(s)
+      // We should only hit this if we refernce a constructor of no arguments....
+      case IdReferenceTyped(s: JavaConstructorSymbol, _) =>
+        for {
+          _ <- createNewInstance(s)
+          _ <- dupe
+          _ <- callJavaConstructor(s)
+        } yield ()
+
 
       // Here we look up method arguments
       case IdReferenceTyped(sym, pos) if sym.original.isInstanceOf[ArgumentSym] =>
@@ -211,13 +252,28 @@ object MethodWriter {
 
 
       // Here we have a straight up method call with all argumnets known.
-      case ap @ ApExprTyped(IdReferenceTyped(s @ FunctionSym(_, argTypes, _, _), _), args, tpe, _) if argTypes.length == args.length =>
+      case ApExprTyped(IdReferenceTyped(s @ FunctionSym(_, argTypes, _, _), _), args, tpe, _) if argTypes.length == args.length =>
         type MWS[A] = State[MethodWriterState, A]
         for {
           _ <- args.toList.traverse[MWS, Unit](placeOnStack)
           _ <- callStaticMethod(s)
         } yield ()
 
+      case ApExprTyped(IdReferenceTyped(s: JavaConstructorSymbol, _), args, tpe, _) if s.arity == args.length =>
+        type MWS[A] = State[MethodWriterState, A]
+        for {
+          _ <- createNewInstance(s)
+          _ <- dupe
+          _ <- args.toList.traverse[MWS, Unit](placeOnStack)
+          _ <- callJavaConstructor(s)
+        } yield ()
+
+      case ApExprTyped(IdReferenceTyped(s: JavaMethodSymbol, _), args, tpe, _) if s.arity == args.length =>
+        type MWS[A] = State[MethodWriterState, A]
+        for {
+          _ <- args.toList.traverse[MWS,Unit](placeOnStack)
+          _ <- callJavaMethod(s)
+        } yield ()
 
       // Partial Application.
       // Now we need to lift closures.  All built-in expressions should already have been handled.
@@ -485,7 +541,7 @@ object GenerateClassFiles {
     (m.name == "main") && (m.tpe == Unit)
 
   import scala.util.parsing.input.Position
-  def getFunctionSignature(tpe: Type, args: Int, pos: Option[Position ] = None): String = {
+  def getFunctionSignature(tpe: Type, args: Int, pos: Option[Position] = None): String = {
     import TypeSystem.Function
     val signature = new SignatureWriter()
     def visitFunctionSignature(signature: SignatureVisitor, f: Type, a: Int): Unit =
@@ -533,7 +589,12 @@ object GenerateClassFiles {
         //visitSignatureInternal(signature.visitTypeArgument('='), arg, pos)
         //visitSignatureInternal(signature.visitTypeArgument('='), result, pos)
       // TODO - is it ok to handle variable types as just objects?
-      case _: TypeSystem.TypeVariable => signature.visitClassType("java/lang/Object;")
+      case (sv, _: TypeSystem.TypeVariable) => sv.visitClassType("java/lang/Object;")
+      // TODO - For all other types, we either try to convert them into java types *or*  bail
+      case (sv, TypeSystem.TypeConstructor(name, _)) if name contains "." =>
+        // TODO - We may want to visit the generic signature here at some point.
+        sv.visitClassType(name.replaceAllLiterally(".", "/"))
+        sv.visitEnd()
       case _ => sys.error(s"Unsupported argument/return type: [$tpe]${pos.map(_.longString).map("\n"+).getOrElse("")}")
     })
 

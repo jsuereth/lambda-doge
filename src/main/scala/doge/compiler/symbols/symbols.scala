@@ -113,6 +113,9 @@ sealed abstract class JavaSymbol extends AbstractDogeSymbol {
   */
 abstract class JavaClassSymbol extends JavaSymbol {
   def name: String
+
+  def jvmName: String
+
   def tpe: Type
   def constructors: Seq[JavaConstructorSymbol]
   def methods: Seq[JavaMethodSymbol]
@@ -135,6 +138,8 @@ abstract class JavaConstructorSymbol extends JavaSymbol {
   def tpe: Type
   /** The arity of the constructor, in case we get confused in the type system, as we implicitly curry. */
   def arity: Int
+  /** The jvm description of arguments for this constructor. */
+  def jvmDesc: String
   override def isJavaConstructor: Boolean = true
 }
 /** Represents a method of a Java class. */
@@ -152,6 +157,8 @@ abstract class JavaMethodSymbol extends JavaSymbol {
   def owner: JavaClassSymbol
   /** True if the method is static. */
   def isStatic: Boolean
+  /** The raw jvm descriptions of the method. */
+  def jvmDesc: String
   override def isJavaMethod: Boolean = false
 }
 /** Represents the field of a Java class. */

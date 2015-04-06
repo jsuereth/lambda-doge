@@ -13,7 +13,7 @@ import scala.util.{Failure, Success}
 case class JavaClassRef(name: String) {
   override def toString = name
 }
-case class RawJavaClassSymbol(name: String, superClass: Option[JavaClassRef], interfaces: Seq[JavaClassRef]) {
+case class RawJavaClassSymbol(name: String, superClass: Option[JavaClassRef], interfaces: Seq[JavaClassRef], isInterface: Boolean, isAbstract: Boolean) {
   override def toString = s"$name${superClass.map(" extends "+).getOrElse("")}${if(interfaces.isEmpty) "" else interfaces.mkString(" with ", " with ", "")}"
 }
 sealed trait ClassMember
@@ -70,7 +70,10 @@ class ClassSymbolReader extends ClassVisitor(Opcodes.ASM5) {
     // TODO - The signature tells us the generics used in our parents, too.
 
     val superCls = Option(superName) map jvmClassToJavaClassName map JavaClassRef.apply
-    baseClassSym = Some(RawJavaClassSymbol(jvmClassToJavaClassName(name), superCls, interfaces.toSeq map jvmClassToJavaClassName map JavaClassRef.apply))
+
+    val isInterface = (Opcodes.ACC_INTERFACE & access) > 0
+    val isAbstract = (Opcodes.ACC_ABSTRACT & access) > 0
+    baseClassSym = Some(RawJavaClassSymbol(jvmClassToJavaClassName(name), superCls, interfaces.toSeq map jvmClassToJavaClassName map JavaClassRef.apply, isInterface, isAbstract))
   }
 
   override def visitOuterClass(owner: String, name: String, desc: String): Unit =

@@ -91,7 +91,8 @@ class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable {
 
   /** Represents a java class symbol when we can read the class file. */
   class MyJavaClassSymbol(val name: String, cls: VisitableClass) extends JavaClassSymbol {
-
+    // TODO - Just keep this from the raw symbol....
+    def jvmName: String = name.replaceAllLiterally(".", "/")
     // Cannot change the type of a class.
     def withType(t: Type): DogeSymbol = ???
 
@@ -112,8 +113,8 @@ class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable {
       }
     }
     // TODO - Implement these.
-    override def isInterface: Boolean = ??? //info.cls.isInterface
-    override def isAbstract: Boolean = ??? //info.cls.isAbstract
+    override def isInterface: Boolean = info.cls.isInterface
+    override def isAbstract: Boolean = info.cls.isAbstract
     override lazy val parentClass: Option[JavaClassSymbol] =
       info.cls.superClass map { i => StubJavaClassSymbol(i.name, false) }
 
@@ -148,7 +149,10 @@ class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable {
     }
 
     override def name: String = info.name
-    override def arity: Int = info.numArgs
+    override def jvmDesc: String = info.jvmDesc
+    override def arity: Int =
+      if(isStatic) info.numArgs
+      else info.numArgs+1
     override def tpe: Type =
       if(isStatic) info.tpe
       else TypeSystem.Function(owner.tpe, info.tpe)
@@ -169,6 +173,7 @@ class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable {
 
     override def name: String = s"${owner.name}#new"
     override def arity: Int = info.numArgs
+    override def jvmDesc: String = info.jvmDesc
     override lazy val tpe: Type = {
       // we need to replace the last function type of "Unit" with owner.tpe. THis converts from raw JVM signature to
       // what DOGE sees.
@@ -219,6 +224,7 @@ class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable {
         case _ => sys.error(s"Unable to find $name on the classpath!")
       }
     }
+    override def jvmName = loaded.jvmName
     override def tpe: Type = loaded.tpe
     override def interfaces: Seq[JavaClassSymbol] = loaded.interfaces
     override def parentClass: Option[JavaClassSymbol] = loaded.parentClass
