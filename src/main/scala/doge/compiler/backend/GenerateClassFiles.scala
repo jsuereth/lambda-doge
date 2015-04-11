@@ -60,25 +60,25 @@ object MethodWriter {
   def box(tpe: Type) = State[MethodWriterState, Unit] { mws =>
     tpe match {
       case TypeSystem.Integer =>
-        mws.mv.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;")
+        mws.mv.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false)
       case TypeSystem.Bool =>
-        mws.mv.visitMethodInsn(INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;")
+        mws.mv.visitMethodInsn(INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false)
       case _ => // Ignore, we are already boxed
     }
-    mws -> ()
+    (mws, ())
   }
   // DUMB unboxing (lazy as possible)
   def unbox(tpe: Type) = State[MethodWriterState, Unit] { mws =>
     tpe match {
       case TypeSystem.Integer =>
         mws.mv.visitTypeInsn(CHECKCAST, "java/lang/Integer")
-        mws.mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Integer", "intValue", "()I")
+        mws.mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Integer", "intValue", "()I", false)
       case TypeSystem.Bool =>
         mws.mv.visitTypeInsn(CHECKCAST, "java/lang/Boolean")
-        mws.mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z")
+        mws.mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false)
       case _ => // Ignore, we are already boxed
     }
-    mws -> ()
+    (mws, ())
   }
 
   def className = State[MethodWriterState, String] { state =>
@@ -111,44 +111,44 @@ object MethodWriter {
   // Injects the bytecode so the value returned by the given AST is pushed onto the stack.
   def loadConstant(i: AnyRef) = State[MethodWriterState, Unit] { state =>
     state.mv.visitLdcInsn(i)
-    state -> ()
+    (state, ())
   }
 
   /** using the IFEQ jump instruction, check the top of the stack and either jump or not. */
   def jumpIfEq(l: Label) = State[MethodWriterState, Unit] { state =>
     state.mv.visitJumpInsn(IFEQ, l)
-    state -> ()
+    (state, ())
   }
 
   /** Goto the given label. */
   def goto(l: Label) = State[MethodWriterState, Unit] { state =>
     state.mv.visitJumpInsn(GOTO, l)
-    state -> ()
+    (state, ())
   }
 
   /** Writes a label at the current bytecode location, for jump instructions. */
   def writeLabel(l: Label) = State[MethodWriterState, Unit] { state =>
     state.mv.visitLabel(l)
-    state -> ()
+    (state, ())
   }
 
 
   /** Wrotes an invokestatic call, all arguments must already be on the stack. */
   def callStaticMethod(m: FunctionSym) = State[MethodWriterState, Unit] { state =>
-    state.mv.visitMethodInsn(INVOKESTATIC, m.ownerClass, m.name, GenerateClassFiles.getMethodSignature(m.argTpes, m.returnTpe))
-    state -> ()
+    state.mv.visitMethodInsn(INVOKESTATIC, m.ownerClass, m.name, GenerateClassFiles.getMethodSignature(m.argTpes, m.returnTpe), false)
+    (state, ())
   }
 
   /** Creates a new java instance on the stack of a class, without calling any constructor. */
   def createNewInstance(s: JavaConstructorSymbol) = State[MethodWriterState, Unit] { state =>
     state.mv.visitTypeInsn(Opcodes.NEW, s.owner.jvmName)
-    state -> ()
+    (state, ())
   }
 
   /** Writes the java constructor call. */
   def callJavaConstructor(s: JavaConstructorSymbol) = State[MethodWriterState, Unit] { state =>
-    state.mv.visitMethodInsn(Opcodes.INVOKESPECIAL, s.owner.jvmName, ClassSymbolReader.CONSTRUCTOR_NAME, s.jvmDesc)
-    state -> ()
+    state.mv.visitMethodInsn(Opcodes.INVOKESPECIAL, s.owner.jvmName, ClassSymbolReader.CONSTRUCTOR_NAME, s.jvmDesc, false)
+    (state, ())
   }
 
   /** Writes a jave method call.  Either INVOKESTATIC, INVOKEINTERFACE or INVOKEVIRTUAL. */
@@ -160,8 +160,8 @@ object MethodWriter {
         if(s.owner.isInterface) Opcodes.INVOKEINTERFACE
         else Opcodes.INVOKEVIRTUAL
       }
-    state.mv.visitMethodInsn(op, s.owner.jvmName, s.name, s.jvmDesc)
-    state -> ()
+    state.mv.visitMethodInsn(op, s.owner.jvmName, s.name, s.jvmDesc, s.owner.isInterface)
+    (state, ())
   }
 
   /** The is an extractor to determine the number of arguments to call the raw method.
@@ -304,7 +304,7 @@ object MethodWriter {
       for {
         _ <- placeOnStack(arg)
         _ <- box(arg.tpe)
-        _ <- rawInsn(_.visitMethodInsn(INVOKEINTERFACE, "java/util/function/Function", "apply", "(Ljava/lang/Object;)Ljava/lang/Object;"))
+        _ <- rawInsn(_.visitMethodInsn(INVOKEINTERFACE, "java/util/function/Function", "apply", "(Ljava/lang/Object;)Ljava/lang/Object;", true))
       } yield ()
     }
     def placeClosureOnStack =
@@ -402,13 +402,13 @@ object MethodWriter {
   // TOOD - Unify with however Java types are exposed in the typesystem
   def getStatic(className: String, field: String, tpeString: String) = State[MethodWriterState, Unit] { state =>
     state.mv.visitFieldInsn(GETSTATIC, className, field, tpeString)
-    state -> ()
+    (state, ())
   }
 
   // TODO - Unify this with Java types as exposed in the typesystem later.
-  def invokeVirtual(className: String, methodName: String, argCount: Int, tpe: Type) = State[MethodWriterState, Unit] { state =>
-    state.mv.visitMethodInsn(INVOKEVIRTUAL, className, methodName, GenerateClassFiles.getFunctionSignature(tpe, argCount))
-    state -> ()
+  def invokeVirtual(className: String, methodName: String, argCount: Int, tpe: Type, isInterface: Boolean) = State[MethodWriterState, Unit] { state =>
+    state.mv.visitMethodInsn(INVOKEVIRTUAL, className, methodName, GenerateClassFiles.getFunctionSignature(tpe, argCount), isInterface)
+    (state, ())
   }
 
 
@@ -422,7 +422,7 @@ object MethodWriter {
        out <- stdout
        _ <- placeOnStack(in)
        // TODO - convert to string if not already string.
-       _ <- invokeVirtual("java/io/PrintStream", "print", 1, TypeSystem.Function(in.tpe, TypeSystem.Unit))
+       _ <- invokeVirtual("java/io/PrintStream", "print", 1, TypeSystem.Function(in.tpe, TypeSystem.Unit), true)
      } yield ()
     /** Writes the println method. */
     def println(args: Seq[TypedAst]): State[MethodWriterState, Unit] = {
@@ -437,8 +437,8 @@ object MethodWriter {
     def emptyPrintln() =
       stdout flatMap { _ =>
         State[MethodWriterState,Unit] { state =>
-          state.mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/PrintStream", "println", "()V")
-          state -> ()
+          state.mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/PrintStream", "println", "()V", true)
+          (state, ())
         }
       }
 
@@ -459,7 +459,7 @@ object MethodWriter {
         // We need this here, even if it's wrong, as ASM will calculate it appropriately.
         state.mv.visitMaxs(1, 1);
         state.mv.visitEnd()
-        state -> ()
+        (state, ())
       }
     }
   }
@@ -495,7 +495,7 @@ object GenerateClassFiles {
       mv.visitMethodInsn(INVOKESPECIAL,
         "java/lang/Object",
         "<init>",
-        "()V")
+        "()V", false)
       mv.visitInsn(RETURN)
       mv.visitMaxs(1, 1)
       mv.visitEnd()
