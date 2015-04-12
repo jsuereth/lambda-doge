@@ -36,8 +36,9 @@ object DogeParser extends RegexParsers {
     val cls: Parser[String] = nme ~ (dot ~> nme).* ^^ {
       case n ~ ns => (n :: ns).mkString(".")
     }
-    cls ~ hsh ~ nme ^^ {
-      case c ~ _ ~ n => s"${c}#${n}"
+    cls ~ hsh ~ opt(hsh) ~ nme ^^ {
+      case c ~ _ ~ Some(_) ~ n => s"${c}##${n}"
+      case c ~ _ ~ None ~ n => s"${c}#${n}"
     }
   }
 

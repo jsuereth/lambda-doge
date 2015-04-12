@@ -11,10 +11,12 @@ import doge.compiler.types._
  * i.e. any built-in function is automatically encoded
  * in a local method which can be lifted.
  *
- * This handles not just partially applied methods, it (TBD) handles closure syntax.
+ * Additionally, this will attempt to manipulate the tree such that any closure is applied
+ * one argument at a time in "ApExpr".  I.e.  code that would have bean x(y,z) if x is closure A -> B -> C, then
+ * this will alter the tree to be x(y)(z), which is more directly what happens at runtime.
  *
- * In the future, this should also ensure that any legitimate closures
- * are lifted.
+ *
+ * This handles not just partially applied methods, it (TBD) handles closure syntax.
  */
 object ClosureLift {
 

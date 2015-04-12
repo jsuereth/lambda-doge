@@ -23,6 +23,16 @@ object JavaMethodName {
   }
   def apply(cls: String, mthd: String): String = s"${cls}#${mthd}"
 }
+object JavaFieldName {
+  def unapply(in: String): Option[(String, String)] = {
+    if(in.contains("##")) {
+      in.split("##") match {
+        case Array(cls, field) => Some((cls, field))
+        case _ => None
+      }
+    } else None
+  }
+}
 object JavaConstructorName {
   def unapply(in: String): Option[String] = {
     in match {
@@ -71,6 +81,19 @@ class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable {
               // TODO - real warning system
               System.err.println(s"Warning:  Class $className has more than one constructor.  Picking the first one we see: $c")
               cons
+          }
+        }
+      case JavaFieldName(className, fieldName) =>
+        lookupClass(className) map { c =>
+          c.fields collect {
+            case f if f.name == fieldName => f
+          } match {
+            case Seq(f) => f
+            case Seq() => throw new IllegalArgumentException(s"No field $fieldName found in class $className")
+            case Seq(f, _*) =>
+              System.out.println(s"Found field: $f")
+              System.err.println(s"Warnign: Field $fieldName is overloaded (somehow)!  Picking the first option we find ($f)")
+              f
           }
         }
       case JavaMethodName(className, mthd) =>
@@ -200,12 +223,13 @@ class ClasspathSymbolTable(cf: ClassFinder) extends SymbolTable {
       }
     }
 
-    override def name: String = s"${owner.name}#${field.name}"
+    override def name: String = field.name //s"${owner.name}##${field.name}"
     override def isStatic: Boolean = field.static
     override lazy val tpe: Type = {
       if(isStatic) field.tpe
       else TypeSystem.Function(owner.tpe, field.tpe)
     }
+    override def jvmDesc: String = field.jvmDesc
     override def toString: String = s"${if(isStatic) "value" else "field" } ${field.name}: $tpe"
   }
 

@@ -139,6 +139,12 @@ object MethodWriter {
     (state, ())
   }
 
+  def callStaticField(f: JavaFieldSymbol) = State[MethodWriterState, Unit] { state =>
+    assert(f.isStatic, s"Field is not static: $f")
+    state.mv.visitFieldInsn(GETSTATIC, f.owner.jvmName, f.name, f.jvmDesc)
+    (state, ())
+  }
+
   /** Creates a new java instance on the stack of a class, without calling any constructor. */
   def createNewInstance(s: JavaConstructorSymbol) = State[MethodWriterState, Unit] { state =>
     state.mv.visitTypeInsn(Opcodes.NEW, s.owner.jvmName)
@@ -234,6 +240,7 @@ object MethodWriter {
           _ <- callJavaConstructor(s)
         } yield ()
 
+      case IdReferenceTyped(f: JavaFieldSymbol, _) => callStaticField(f)
 
       // Here we look up method arguments
       case IdReferenceTyped(sym, pos) if sym.original.isInstanceOf[ArgumentSym] =>

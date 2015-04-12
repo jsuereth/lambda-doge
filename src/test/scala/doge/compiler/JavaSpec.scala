@@ -11,6 +11,9 @@ object JavaSpec extends FullCompilerSpec {
 
     java.lang.Boolean in lambda-doge should
       call static methods in $callStaticBooleanMethods
+
+    java.io.PrintStream in lambda-doge should
+      work with System.out in $callInterfaceMethods
   """
 
 
@@ -39,5 +42,14 @@ object JavaSpec extends FullCompilerSpec {
       |true true
       |!
     """.stripMargin must compileAndEvalTestAs(0)
+  }
+  def callInterfaceMethods = {
+    """
+      |WOW
+      |test
+      |MUCH java.io.PrintStream#println
+      |java.lang.System##out
+      |!
+    """.stripMargin must compileAndEvalTestAs(null)
   }
 }

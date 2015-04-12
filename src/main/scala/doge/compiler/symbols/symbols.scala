@@ -171,5 +171,7 @@ abstract class JavaFieldSymbol extends  JavaSymbol {
   def isStatic: Boolean
   /** The owner of this field. */
   def owner: JavaClassSymbol
+  /** The jvm description (for bytecode generation) for this field. */
+  def jvmDesc: String
   override def isJavaField: Boolean = true
 }
