@@ -98,6 +98,7 @@ object Typer {
       case id: IdReference => typeIdReference(id).asInstanceOf[TyperState[TypedAst]]
       case i: IntLiteral => typeIntLiteral(i).asInstanceOf[TyperState[TypedAst]]
       case b: BoolLiteral => typeBoolLiteral(b).asInstanceOf[TyperState[TypedAst]]
+      case s: StringLiteral => typeStringLiteral(s).asInstanceOf[TyperState[TypedAst]]
       case app: ApExpr => typeApply(app).asInstanceOf[TyperState[TypedAst]]
       case let: LetExpr => typeLet(let).asInstanceOf[TyperState[TypedAst]]
       case m: Module => typeModule(m).asInstanceOf[TyperState[TypedAst]]
@@ -129,6 +130,10 @@ object Typer {
 
   private def typeBoolLiteral(ast: BoolLiteral): TyperState[BoolLiteralTyped] =
     State(x => x -> BoolLiteralTyped(ast.value, ast.pos))
+
+  private def typeStringLiteral(ast: StringLiteral): TyperState[StringLiteralTyped] =
+    State(x => x -> StringLiteralTyped(ast.value, ast.pos))
+
   /** Computes the type of ID references.  Essentially just a lookup on state. */
   private def typeIdReference(ref: IdReference): TyperState[IdReferenceTyped] =
     for {

@@ -100,6 +100,13 @@ object DogeParser extends RegexParsers {
   lazy val intLiteral: Parser[IntLiteral] =
     positioned("\\d+".r map { value => IntLiteral(value.toInt) })
 
+  // TODO - clean this up...
+  lazy val stringLiteral: Parser[StringLiteral] =
+    positioned(
+      ("\""+"""([^"\p{Cntrl}\\]|\\[\\'"bfnrt]|\\u[a-fA-F0-9]{4})*+"""+"\"").r map { s =>
+          StringLiteral(s.drop(1).dropRight(1))
+        })
+
   lazy val boolLiteral: Parser[BoolLiteral] =  {
     val t = literal("true") ^^^ BoolLiteral(true)
     val f = literal("false") ^^^ BoolLiteral(false)
@@ -128,7 +135,7 @@ object DogeParser extends RegexParsers {
       case ignore ~ arg ~ defn => LambdaExpr(arg, defn)
     })
 
-  lazy val literal: Parser[Literal] = intLiteral | boolLiteral
+  lazy val literal: Parser[Literal] = intLiteral | boolLiteral | stringLiteral
 
   lazy val expr: Parser[DogeAst] =
     (letExpr | lambdaExpr | apExpr | literal | idRef)

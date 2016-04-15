@@ -28,6 +28,9 @@ case class IntLiteral(value: Int) extends Literal {
 case class BoolLiteral(value: Boolean) extends Literal {
   override def toString = value.toString
 }
+case class StringLiteral(value: String) extends Literal {
+  override def toString = '"'+value+'"'
+}
 case class IdReference(name: String) extends DogeAst {
   override def toString = s"<$name>"
 }

@@ -143,7 +143,7 @@ object  TypeSystem {
   val Bool = Simple("Boolean")
 
   // TODO - Unsupported types
-  val String = Simple("String")  // TODO - Alias this to list int?
+  val String = Simple("java.lang.String")  // TODO - Alias this to list int?
   val Unit = Simple("Unit")
   val ListType = TypeConstructor("List", Seq(newVariable))
   val MapType = TypeConstructor("Map", Seq(newVariable, newVariable))

@@ -46,6 +46,10 @@ case class BoolLiteralTyped(value: Boolean, pos: Position = NoPosition) extends 
   override def toString = s"$value[Boolean]"
   override def tpe = TypeSystem.Bool
 }
+case class StringLiteralTyped(value: String, pos: Position = NoPosition) extends LiteralTyped {
+  override def toString = s"$value[String]"
+  override def tpe = TypeSystem.String
+}
 
 case class IdReferenceTyped(sym: DogeSymbol, pos: Position = NoPosition) extends TypedAst {
   def name: String = sym.name

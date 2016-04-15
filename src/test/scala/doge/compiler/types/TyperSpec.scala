@@ -29,6 +29,7 @@ class TyperSpec extends Specification { def is = s2"""
       clear argument environment between lets         $handleMultiApplyBindIssue
       type boolean literals                           $typeBooleanLiterals
       type int literals                               $typeIntLiterals
+      type string literals                            $typeStringLiterals
       catch type errors                               $listError
       type built in references                        $typeReferences
       type partial application                        $handlePartialApply
@@ -125,6 +126,10 @@ class TyperSpec extends Specification { def is = s2"""
 
   def typeIntLiterals = {
      IntLiteral(1) must typeAs(IntLiteralTyped(1))
+  }
+
+  def typeStringLiterals = {
+    StringLiteral("hi") must typeAs(StringLiteralTyped("hi"))
   }
 
   def typeReferences =

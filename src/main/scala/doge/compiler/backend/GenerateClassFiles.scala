@@ -221,6 +221,7 @@ object MethodWriter {
       //  Literals are easiest to encode.
       case i: IntLiteralTyped => loadConstant(new java.lang.Integer(i.value))
       case b: BoolLiteralTyped => loadConstant(new java.lang.Boolean(b.value))
+      case s: StringLiteralTyped => loadConstant(s.value)
       // TODO - how to handle id references?
       // TODO - move these into builtins...
       case ApExprTyped(i, Seq(id), _, _) if i.name == "IS" => placeOnStack(id)

@@ -13,6 +13,7 @@ class ParserSpec extends Specification { def is = s2"""
     The Parser should
       parse int literals                             $parseIntLiterals
       parse bool literals                            $parseBoolLiterals
+      parse string literals                          $parseStringLiterals
       parse identifiers                              $parseIdentifiers
       parse application                              $parseApplication
       parse let                                      $parseLet
@@ -40,6 +41,8 @@ class ParserSpec extends Specification { def is = s2"""
     "5" must parseAs(intLiteral, IntLiteral(5))
   }
 
+  def parseStringLiterals =
+    "\"HAI\"" must parseAs(expr, StringLiteral("HAI"))
   def parseBoolLiterals = {
     ("true" must parseAs(expr, BoolLiteral(true))) and
       ("false" must parseAs(expr, BoolLiteral(false)))
