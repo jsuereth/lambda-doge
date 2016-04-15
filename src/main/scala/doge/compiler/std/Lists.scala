@@ -2,6 +2,7 @@ package doge.compiler.std
 
 import doge.compiler.backend.MethodWriterState
 import doge.compiler.std
+import doge.compiler.symbols.{BuiltInSymbolTable, SymbolTable}
 import doge.compiler.types.TypeSystem.{TypeConstructor, Type, newVariable, FunctionN, Function}
 import doge.compiler.types._
 import org.objectweb.asm.signature.SignatureVisitor
@@ -13,32 +14,41 @@ import scalaz._
 object Lists extends BuiltInType {
   val name = "List"
   val NIL = "Nil"
+  val NilSym = BuiltInSymbolTable.Function(NIL, TypeSystem.ListType)
+  val ConsType = {
+    val a = newVariable
+    val lst = TypeConstructor("List", Seq(a))
+    FunctionN(lst, a, lst)
+  }
   val CONS = "cons"
+  val ConsSym = BuiltInSymbolTable.Function(CONS, ConsType)
+  val HeadType = {
+    val a = newVariable
+    val lst = TypeConstructor("List", Seq(a))
+    Function(lst, a)
+  }
   val HEAD = "hd"
+  val HeadSym = BuiltInSymbolTable.Function(HEAD, HeadType)
+  val TailType = {
+    val a = newVariable
+    val lst = TypeConstructor("List", Seq(a))
+    Function(lst, lst)
+  }
   val TAIL = "tl"
+  val TailSym = BuiltInSymbolTable.Function(TAIL, TailType)
 
-  override val typeTable: Seq[TypeEnvironmentInfo] = Seq(
-    TypeEnvironmentInfo(NIL, BuiltIn, TypeSystem.ListType),
-    TypeEnvironmentInfo(CONS, BuiltIn, {
-      val a = newVariable
-      val lst = TypeConstructor("List", Seq(a))
-      FunctionN(lst, a, lst)
-    }),
-    TypeEnvironmentInfo(HEAD, BuiltIn, {
-      val a = newVariable
-      val lst = TypeConstructor("List", Seq(a))
-      Function(lst, a)
-    }),
-    TypeEnvironmentInfo(TAIL, BuiltIn, {
-      val a = newVariable
-      val lst = TypeConstructor("List", Seq(a))
-      Function(lst, lst)
-    })
-  )
+  override val symbolTable: SymbolTable =
+    new BuiltInSymbolTable(Seq(
+      NilSym,
+      ConsSym,
+      HeadSym,
+      TailSym
+    ))
+
 
   override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
     case ApExprTyped(i, _, _, _) if i.name == NIL => writeNil
-    case IdReferenceTyped(NIL, _, _)  => writeNil
+    case IdReferenceTyped(sym, _) if sym.original == NilSym => writeNil
     case ApExprTyped(i, Seq(front, lstExpr), tpe, _) if i.name == CONS => writeCons(front, lstExpr)
     case ApExprTyped(i, Seq(lstExpr), tpe, _) if i.name == HEAD => writeHead(lstExpr)
     case ApExprTyped(i, Seq(lstExpr), tpe, _) if i.name == TAIL => writeTail(lstExpr)

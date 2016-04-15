@@ -3,6 +3,7 @@ package std
 
 import doge.compiler.backend.MethodWriterState
 import doge.compiler.std
+import doge.compiler.symbols.{BuiltInSymbolTable, SymbolTable}
 import doge.compiler.types.TypeSystem.Type
 import doge.compiler.types._
 import org.objectweb.asm.signature.SignatureVisitor
@@ -14,18 +15,19 @@ import scalaz._
 object Integers extends BuiltInType {
   def name: String = "Integer"
 
+  val BinaryIntOp = TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer))
   val PLUS = "Plus"
+  val PlusSym = BuiltInSymbolTable.Function(PLUS, BinaryIntOp)
   val MINUS = "Minus"
   val MUL = "Multiply"
   val DIV = "Divide"
 
-  override val typeTable: Seq[TypeEnvironmentInfo] =
-    Seq(
-      TypeEnvironmentInfo(PLUS, BuiltIn, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer))),
-      TypeEnvironmentInfo(MINUS, BuiltIn, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer))),
-      TypeEnvironmentInfo(MUL, BuiltIn, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer))),
-      TypeEnvironmentInfo(DIV, BuiltIn, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Function(TypeSystem.Integer, TypeSystem.Integer)))
-    )
+  override val symbolTable: SymbolTable =
+    new BuiltInSymbolTable(Seq(
+      PlusSym,
+      BuiltInSymbolTable.Function(MINUS, BinaryIntOp),
+      BuiltInSymbolTable.Function(MUL, BinaryIntOp),
+      BuiltInSymbolTable.Function(DIV, BinaryIntOp)))
 
   override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
     case ApExprTyped(id, Seq(left, right), _, _) if id.name == "Plus" => plus(left, right)

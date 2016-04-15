@@ -2,7 +2,9 @@ package doge.compiler
 package backend
 
 import java.lang.invoke.LambdaMetafactory
-
+import doge.compiler.classloader.ClassSymbolReader
+import doge.compiler.symbols._
+import doge.compiler.symbols.ScopeSymbolTable.{Argument => ArgumentSym, Function => FunctionSym}
 import doge.compiler.std.BuiltInType
 import org.objectweb.asm.Opcodes._
 import org.objectweb.asm._
@@ -57,26 +59,26 @@ object MethodWriter {
   // DUMB boxing (lazy as possible)
   def box(tpe: Type) = State[MethodWriterState, Unit] { mws =>
     tpe match {
-      case Integer =>
-        mws.mv.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;")
+      case TypeSystem.Integer =>
+        mws.mv.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false)
       case TypeSystem.Bool =>
-        mws.mv.visitMethodInsn(INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;")
+        mws.mv.visitMethodInsn(INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false)
       case _ => // Ignore, we are already boxed
     }
-    mws -> ()
+    (mws, ())
   }
   // DUMB unboxing (lazy as possible)
   def unbox(tpe: Type) = State[MethodWriterState, Unit] { mws =>
     tpe match {
-      case Integer =>
+      case TypeSystem.Integer =>
         mws.mv.visitTypeInsn(CHECKCAST, "java/lang/Integer")
-        mws.mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Integer", "intValue", "()I")
+        mws.mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Integer", "intValue", "()I", false)
       case TypeSystem.Bool =>
         mws.mv.visitTypeInsn(CHECKCAST, "java/lang/Boolean")
-        mws.mv.visitMethodInsn(INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;")
+        mws.mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false)
       case _ => // Ignore, we are already boxed
     }
-    mws -> ()
+    (mws, ())
   }
 
   def className = State[MethodWriterState, String] { state =>
@@ -109,55 +111,90 @@ object MethodWriter {
   // Injects the bytecode so the value returned by the given AST is pushed onto the stack.
   def loadConstant(i: AnyRef) = State[MethodWriterState, Unit] { state =>
     state.mv.visitLdcInsn(i)
-    state -> ()
+    (state, ())
   }
 
   /** using the IFEQ jump instruction, check the top of the stack and either jump or not. */
   def jumpIfEq(l: Label) = State[MethodWriterState, Unit] { state =>
     state.mv.visitJumpInsn(IFEQ, l)
-    state -> ()
+    (state, ())
   }
 
   /** Goto the given label. */
   def goto(l: Label) = State[MethodWriterState, Unit] { state =>
     state.mv.visitJumpInsn(GOTO, l)
-    state -> ()
+    (state, ())
   }
 
   /** Writes a label at the current bytecode location, for jump instructions. */
   def writeLabel(l: Label) = State[MethodWriterState, Unit] { state =>
     state.mv.visitLabel(l)
-    state -> ()
+    (state, ())
   }
 
 
   /** Wrotes an invokestatic call, all arguments must already be on the stack. */
-  def callStaticMethod(m: StaticMethod) = State[MethodWriterState, Unit] { state =>
-    state.mv.visitMethodInsn(INVOKESTATIC, m.className, m.method, GenerateClassFiles.getMethodSignature(m.args, m.result))
-    state -> ()
+  def callStaticMethod(m: FunctionSym) = State[MethodWriterState, Unit] { state =>
+    state.mv.visitMethodInsn(INVOKESTATIC, m.ownerClass, m.name, GenerateClassFiles.getMethodSignature(m.argTpes, m.returnTpe), false)
+    (state, ())
   }
 
-  def getLocalField(s: LocalField) = State[MethodWriterState, Unit] { state =>
-    // First we grab `this`, then we get the argument.
-    state.mv.visitVarInsn(ALOAD,0)
-    state.mv.visitFieldInsn(GETFIELD, s.className, s.field, GenerateClassFiles.getFieldSignature(s.tpe))
-    state -> ()
+  def callStaticField(f: JavaFieldSymbol) = State[MethodWriterState, Unit] { state =>
+    assert(f.isStatic, s"Field is not static: $f")
+    state.mv.visitFieldInsn(GETSTATIC, f.owner.jvmName, f.name, f.jvmDesc)
+    (state, ())
   }
 
+  /** Creates a new java instance on the stack of a class, without calling any constructor. */
+  def createNewInstance(s: JavaConstructorSymbol) = State[MethodWriterState, Unit] { state =>
+    state.mv.visitTypeInsn(Opcodes.NEW, s.owner.jvmName)
+    (state, ())
+  }
+
+  /** Writes the java constructor call. */
+  def callJavaConstructor(s: JavaConstructorSymbol) = State[MethodWriterState, Unit] { state =>
+    state.mv.visitMethodInsn(Opcodes.INVOKESPECIAL, s.owner.jvmName, ClassSymbolReader.CONSTRUCTOR_NAME, s.jvmDesc, false)
+    (state, ())
+  }
+
+  /** Writes a jave method call.  Either INVOKESTATIC, INVOKEINTERFACE or INVOKEVIRTUAL. */
+  def callJavaMethod(s: JavaMethodSymbol) = State[MethodWriterState, Unit] { state =>
+    val op =
+      if(s.isStatic) Opcodes.INVOKESTATIC
+      else {
+        // TODO - invoke interface, or invoke special
+        if(s.owner.isInterface) Opcodes.INVOKEINTERFACE
+        else Opcodes.INVOKEVIRTUAL
+      }
+    state.mv.visitMethodInsn(op, s.owner.jvmName, s.name, s.jvmDesc, s.owner.isInterface)
+    (state, ())
+  }
+
+  /** The is an extractor to determine the number of arguments to call the raw method.
+    *
+    */
   object ClosureReference {
     import TypeSystem._
+    /** Given an id (and its symbol) determine how many physical arguments the JVM type takes. */
     def unapply(id: IdReferenceTyped): Option[Int] = {
-      id.env.location match {
-        case LocalField(_, _, Function(_,_)) => Some(0)
-        case LocalField(_, _, _) => None
-        case StaticMethod(_, _, args, Function(_,_)) =>  Some(args.size)
-        case StaticMethod(_, _, args, _) =>  None
-        case Argument => id.env.tpe match {
-          case Function(_,_) => Some(0)
-          case _ => None
-        }
-        case BuiltIn => None
+      def unapplySym(sym: DogeSymbol): Option[Int] =
+      // TODO - Make better symbol table readers here, and handle java symbols.
+      sym.original match {
+        case FunctionSym(_, argTpes, Function(_,_), _) => Some(argTpes.size)
+        case x: FunctionSym => None
+        case x: FunctionParameterSymbol =>
+          // Note - we check the underlying type to see if it's paaramter, but we need to check the *inferred* (final)
+          sym.tpe match {
+            case Function(_,_) => Some(0)
+            case _ => None
+          }
+        case x if x.isBuiltIn => None
+        // Here we need to handle java types
+        case x: JavaConstructorSymbol => Some(x.arity)
+        case x: JavaFieldSymbol => if(x.isStatic) None else Some(1)
+        case x: JavaMethodSymbol => Some(x.arity)
       }
+      unapplySym(id.sym)
     }
   }
   // TODO - Somehow this isn't catching arguments that are closures...
@@ -193,16 +230,25 @@ object MethodWriter {
       // Now we handle simple "reference" type lookups.
 
       // This is references an expression with no arguments, we just call the method to evaluate it.
-      case IdReferenceTyped(_, Location(s @ StaticMethod(_, _, Nil, _ )), _) => callStaticMethod(s)
-      // we're inside a lambda class, and we can just grab a locally captured field.
-      case IdReferenceTyped(_, Location(s : LocalField), _) => getLocalField(s)
-      // Here we look up method arguments
-      case IdReferenceTyped(name, Location(Argument), pos) =>
+        // TODO - this should handle all static methods, not just doge defined ones
+      case IdReferenceTyped(s: FunctionSym, _) => callStaticMethod(s)
+      // We should only hit this if we refernce a constructor of no arguments....
+      case IdReferenceTyped(s: JavaConstructorSymbol, _) =>
         for {
-          idx <- localVarIndex(name)
+          _ <- createNewInstance(s)
+          _ <- dupe
+          _ <- callJavaConstructor(s)
+        } yield ()
+
+      case IdReferenceTyped(f: JavaFieldSymbol, _) => callStaticField(f)
+
+      // Here we look up method arguments
+      case IdReferenceTyped(sym, pos) if sym.original.isInstanceOf[ArgumentSym] =>
+        for {
+          idx <- localVarIndex(sym.name)
           _ <- idx match {
             case Some(i) => loadLocalVariable(ast.tpe, i)
-            case None => sys.error(s"Unable to find argument [$name] when generating method bytecode at:\n$pos.longString}")
+            case None => sys.error(s"Unable to find argument [${sym.name}] when generating method bytecode at:\n$pos.longString}")
           }
         } yield ()
 
@@ -213,13 +259,28 @@ object MethodWriter {
 
 
       // Here we have a straight up method call with all argumnets known.
-      case ap @ ApExprTyped(IdReferenceTyped(_, Location(s @ StaticMethod(_, _, argTypes, _)), _), args, tpe, _) if argTypes.length == args.length =>
+      case ApExprTyped(IdReferenceTyped(s @ FunctionSym(_, argTypes, _, _), _), args, tpe, _) if argTypes.length == args.length =>
         type MWS[A] = State[MethodWriterState, A]
         for {
           _ <- args.toList.traverse[MWS, Unit](placeOnStack)
           _ <- callStaticMethod(s)
         } yield ()
 
+      case ApExprTyped(IdReferenceTyped(s: JavaConstructorSymbol, _), args, tpe, _) if s.arity == args.length =>
+        type MWS[A] = State[MethodWriterState, A]
+        for {
+          _ <- createNewInstance(s)
+          _ <- dupe
+          _ <- args.toList.traverse[MWS, Unit](placeOnStack)
+          _ <- callJavaConstructor(s)
+        } yield ()
+
+      case ApExprTyped(IdReferenceTyped(s: JavaMethodSymbol, _), args, tpe, _) if s.arity == args.length =>
+        type MWS[A] = State[MethodWriterState, A]
+        for {
+          _ <- args.toList.traverse[MWS,Unit](placeOnStack)
+          _ <- callJavaMethod(s)
+        } yield ()
 
       // Partial Application.
       // Now we need to lift closures.  All built-in expressions should already have been handled.
@@ -250,7 +311,7 @@ object MethodWriter {
       for {
         _ <- placeOnStack(arg)
         _ <- box(arg.tpe)
-        _ <- rawInsn(_.visitMethodInsn(INVOKEINTERFACE, "java/util/function/Function", "apply", "(Ljava/lang/Object;)Ljava/lang/Object;"))
+        _ <- rawInsn(_.visitMethodInsn(INVOKEINTERFACE, "java/util/function/Function", "apply", "(Ljava/lang/Object;)Ljava/lang/Object;", true))
       } yield ()
     }
     def placeClosureOnStack =
@@ -296,7 +357,7 @@ object MethodWriter {
       _ <- rawInsn { mv =>
         import org.objectweb.asm.commons.GeneratorAdapter
         // A method handle on the function we're lifting into a closure.
-        val delegateMethodHandle: Handle = methodHandleFromEnvironment(id.env, pos)
+        val delegateMethodHandle: Handle = methodHandleFromSymbol(id.sym, pos)
         // TODO - Will we always be returning an object?  Perhaps
         val inputType: org.objectweb.asm.Type = org.objectweb.asm.Type.getType("(Ljava/lang/Object;)Ljava/lang/Object;")
         // TODO - This needs to be the type of the resulting closure.
@@ -318,14 +379,13 @@ object MethodWriter {
     } yield ()
   }
 
-  /** Generates a method handle from the TypeEnvironmentInfo references, or throws an error if the type does not
-    * refer to a valid method.
+  /** Generates a method handle from the symbol we have.
     */
-  private def methodHandleFromEnvironment(env: TypeEnvironmentInfo, pos: Position): Handle =
-   env.location match {
-     case StaticMethod(cls, mthd, args, result) =>
+  private def methodHandleFromSymbol(sym: DogeSymbol, pos: Position): Handle =
+   sym match {
+     case FunctionSym(mthd, args, result, cls) =>
        new Handle(Opcodes.H_INVOKESTATIC, cls, mthd, GenerateClassFiles.getFunctionSignature(TypeSystem.FunctionN(result, args:_*), args.size))
-     case _ => sys.error(s"We don't handle methods of type: ${env}, at\n ${pos.longString}")
+     case _ => sys.error(s"We don't handle methods of type: ${sym}, at\n ${pos.longString}")
    }
 
   /** calls a function with a given reference and set of arguments. */
@@ -334,8 +394,8 @@ object MethodWriter {
     type S[A] = State[MethodWriterState, A]
     for {
       _ <- args.reverse.toList.traverse[S, Unit](placeOnStack)
-      _ <- i.env.location match {
-        case s: StaticMethod => callStaticMethod(s)
+      _ <- i.sym match {
+        case s: FunctionSym => callStaticMethod(s)
         case _ => sys.error(s"Unable to determine how to invoke method $i")
       }
     } yield ()
@@ -349,13 +409,13 @@ object MethodWriter {
   // TOOD - Unify with however Java types are exposed in the typesystem
   def getStatic(className: String, field: String, tpeString: String) = State[MethodWriterState, Unit] { state =>
     state.mv.visitFieldInsn(GETSTATIC, className, field, tpeString)
-    state -> ()
+    (state, ())
   }
 
   // TODO - Unify this with Java types as exposed in the typesystem later.
-  def invokeVirtual(className: String, methodName: String, argCount: Int, tpe: Type) = State[MethodWriterState, Unit] { state =>
-    state.mv.visitMethodInsn(INVOKEVIRTUAL, className, methodName, GenerateClassFiles.getFunctionSignature(tpe, argCount))
-    state -> ()
+  def invokeVirtual(className: String, methodName: String, argCount: Int, tpe: Type, isInterface: Boolean) = State[MethodWriterState, Unit] { state =>
+    state.mv.visitMethodInsn(INVOKEVIRTUAL, className, methodName, GenerateClassFiles.getFunctionSignature(tpe, argCount), isInterface)
+    (state, ())
   }
 
 
@@ -369,7 +429,7 @@ object MethodWriter {
        out <- stdout
        _ <- placeOnStack(in)
        // TODO - convert to string if not already string.
-       _ <- invokeVirtual("java/io/PrintStream", "print", 1, TypeSystem.Function(in.tpe, TypeSystem.Unit))
+       _ <- invokeVirtual("java/io/PrintStream", "print", 1, TypeSystem.Function(in.tpe, TypeSystem.Unit), true)
      } yield ()
     /** Writes the println method. */
     def println(args: Seq[TypedAst]): State[MethodWriterState, Unit] = {
@@ -384,8 +444,8 @@ object MethodWriter {
     def emptyPrintln() =
       stdout flatMap { _ =>
         State[MethodWriterState,Unit] { state =>
-          state.mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/PrintStream", "println", "()V")
-          state -> ()
+          state.mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/PrintStream", "println", "()V", true)
+          (state, ())
         }
       }
 
@@ -406,7 +466,7 @@ object MethodWriter {
         // We need this here, even if it's wrong, as ASM will calculate it appropriately.
         state.mv.visitMaxs(1, 1);
         state.mv.visitEnd()
-        state -> ()
+        (state, ())
       }
     }
   }
@@ -442,7 +502,7 @@ object GenerateClassFiles {
       mv.visitMethodInsn(INVOKESPECIAL,
         "java/lang/Object",
         "<init>",
-        "()V")
+        "()V", false)
       mv.visitInsn(RETURN)
       mv.visitMaxs(1, 1)
       mv.visitEnd()
@@ -488,7 +548,7 @@ object GenerateClassFiles {
     (m.name == "main") && (m.tpe == Unit)
 
   import scala.util.parsing.input.Position
-  def getFunctionSignature(tpe: Type, args: Int, pos: Option[Position ] = None): String = {
+  def getFunctionSignature(tpe: Type, args: Int, pos: Option[Position] = None): String = {
     import TypeSystem.Function
     val signature = new SignatureWriter()
     def visitFunctionSignature(signature: SignatureVisitor, f: Type, a: Int): Unit =
@@ -536,7 +596,12 @@ object GenerateClassFiles {
         //visitSignatureInternal(signature.visitTypeArgument('='), arg, pos)
         //visitSignatureInternal(signature.visitTypeArgument('='), result, pos)
       // TODO - is it ok to handle variable types as just objects?
-      case _: TypeSystem.TypeVariable => signature.visitClassType("java/lang/Object;")
+      case (sv, _: TypeSystem.TypeVariable) => sv.visitClassType("java/lang/Object;")
+      // TODO - For all other types, we either try to convert them into java types *or*  bail
+      case (sv, TypeSystem.TypeConstructor(name, _)) if name contains "." =>
+        // TODO - We may want to visit the generic signature here at some point.
+        sv.visitClassType(name.replaceAllLiterally(".", "/"))
+        sv.visitEnd()
       case _ => sys.error(s"Unsupported argument/return type: [$tpe]${pos.map(_.longString).map("\n"+).getOrElse("")}")
     })
 

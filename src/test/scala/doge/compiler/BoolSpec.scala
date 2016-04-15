@@ -14,6 +14,10 @@ object BoolSpec extends FullCompilerSpec {
   """
 
 
+  // TODO - alternative syntax
+  // let cat = false
+  // let test =  !ifs cat 4 5!
+
   def ifFalse =
     """WOW
       |cat

@@ -6,14 +6,23 @@ import doge.compiler.ast.IntLiteral
 import doge.compiler.ast.LetExpr
 import doge.compiler.parser.DogeParser
 import doge.compiler.parser.DogeParser._
+import doge.compiler.std.Integers
+import doge.compiler.symbols.BuiltInSymbolTable
 import org.specs2._
 import doge.compiler.ast._
 import org.specs2.matcher.{Expectable, Matcher}
 import TypeSystem._
+import scala.util.parsing.input.{NoPosition, Position}
+import doge.compiler.symbols.ScopeSymbolTable.{Argument => ArgumentSym, Function => FunctionSym}
+import doge.compiler.symbols.BuiltInSymbolTable.{Function => BuiltInFunctionSym}
 
 class TyperSpec extends Specification { def is = s2"""
 
     This is a specification to check the Parser of the DOGE language
+
+    The Typer should unify
+       simple qualified types                         $unifySimpleQualifiedTypes
+       complex types                                  ${unifyComplexQualifiedTypes.pendingUntilFixed}
 
     The Typer should
 
@@ -29,10 +38,51 @@ class TyperSpec extends Specification { def is = s2"""
       fail on specified type mismatch                 $failOnSpecifiedTypeMisMatch
       type with specified types                       $useTypesSpecified
       type lambdas                                    $typeLambdas
+      type curried application                        $typeCurriedApplication
                                                       """
+
+
+  def unifySimpleQualifiedTypes = {
+    val a = TypeSystem.newVariable
+    val b = TypeSystem.newVariable
+    val numA = TypeSystem.QualifiedType(TypeSystem.IsIn("Num"), a)
+    val numB = TypeSystem.QualifiedType(TypeSystem.IsIn("Num"), b)
+    (numA, numB) must unifyAs(numA)
+  }
+
+  def unifyComplexQualifiedTypes = {
+    val a = TypeSystem.newVariable
+    val b = TypeSystem.newVariable
+    val numA = TypeSystem.QualifiedType(TypeSystem.IsIn("Num"), a)
+    val eqB = TypeSystem.QualifiedType(TypeSystem.IsIn("Eq"), b)
+
+    (numA, eqB) must unifyAs(numA)
+  }
 
   def failOnSpecifiedTypeMisMatch = {
     LetExpr("bad", Some(Integer), Nil, ApExpr(IdReference("plus"), Seq(IntLiteral(1)))) must not(typeCheck)
+  }
+
+  def typeCurriedApplication = {
+    LetExpr("foo", None, Seq("x"),
+      ApExpr(IdReference("plus"), Seq(ApExpr(IdReference("x"), Seq(IntLiteral(1))), IntLiteral(1)))
+    )  must typeAs(
+      LetExprTyped(
+        name = "foo",
+        argNames = Seq("x"),
+        tpe = Function(Function(Integer, Integer), Integer),
+         definition =
+           ApExprTyped(
+             IdReferenceTyped(plusSym),
+             Seq(
+               ApExprTyped(IdReferenceTyped(ArgumentSym("x", Function(Integer, Integer))), Seq(IntLiteralTyped(1)), Integer),
+               IntLiteralTyped(1)
+             ),
+             Integer
+           )
+      )
+
+    )
   }
 
   def typeLambdas = {
@@ -57,8 +107,8 @@ class TyperSpec extends Specification { def is = s2"""
           name = "specified",
           argNames = Seq("a"),
           definition = ApExprTyped(
-            name = IdReferenceTyped("is", TypeEnvironmentInfo("is", BuiltIn, Function(Integer, Integer))),
-            args = Seq(IdReferenceTyped("a", TypeEnvironmentInfo("a", Argument, Integer))),
+            name = IdReferenceTyped(BuiltInFunctionSym("is", Function(Integer, Integer))),
+            args = Seq(IdReferenceTyped(ArgumentSym("a", Integer))),
             tpe = Integer
           ),
           tpe = Function(Integer, Integer))
@@ -78,19 +128,14 @@ class TyperSpec extends Specification { def is = s2"""
   }
 
   def typeReferences =
-     IdReference("is") must typeAs(IdReferenceTyped("is", defaultTypeEnv.lookup("is")))
+     IdReference("is") must typeAs(IdReferenceTyped(defaultTypeEnv.lookup("is").get))
 
 
   def unifyApplication =
      ApExpr(IdReference("plus"), Seq(ApExpr(IdReference("is"), Seq(IntLiteral(1))))) must
-       typeAs(ApExprTyped(name = IdReferenceTyped("plus", TypeEnvironmentInfo("plus", BuiltIn, plusType)),
+       typeAs(ApExprTyped(name = plusReference,
                          args = Seq(ApExprTyped(
-                           IdReferenceTyped("is", TypeEnvironmentInfo(
-                             "is",
-                             BuiltIn,
-                             Function(Integer, Integer)
-                           )),
-
+                           IdReferenceTyped(BuiltInFunctionSym("is", Function(Integer, Integer))),
                            Seq(IntLiteralTyped(1)), Integer)),
                          tpe = Function(Integer, Integer)))
 
@@ -101,8 +146,8 @@ class TyperSpec extends Specification { def is = s2"""
           name = "liftMe",
           argNames = Seq("a"),
           definition = ApExprTyped(
-                        name = IdReferenceTyped("plus", TypeEnvironmentInfo("plus", BuiltIn, plusType)),
-                        args = Seq(IdReferenceTyped("a", TypeEnvironmentInfo("a", Argument, Integer))),
+                        name = plusReference,
+                        args = Seq(IdReferenceTyped(ArgumentSym("a", Integer))),
                         tpe = Function(Integer, Integer)
                        ),
           tpe = Function(Integer, Function(Integer, Integer)))
@@ -118,8 +163,8 @@ class TyperSpec extends Specification { def is = s2"""
           name = "plusOne",
           argNames = Seq("x"),
           definition = ApExprTyped(
-                          name = IdReferenceTyped("plus", TypeEnvironmentInfo("plus", BuiltIn, plusType)),
-                          args = Seq(IdReferenceTyped("x", TypeEnvironmentInfo("x", Argument, Integer)), IntLiteralTyped(1)),
+                          name = plusReference,
+                          args = Seq(IdReferenceTyped(ArgumentSym("x", Integer)), IntLiteralTyped(1)),
                           tpe = Integer),
           tpe = Function(Integer, Integer)
         )
@@ -140,8 +185,8 @@ class TyperSpec extends Specification { def is = s2"""
             name = "liftMe",
             argNames = Seq("a"),
             definition = ApExprTyped(
-              name = IdReferenceTyped("plus", TypeEnvironmentInfo("plus", BuiltIn, plusType)),
-              args = Seq(IdReferenceTyped("a", TypeEnvironmentInfo("a", Argument, Integer))),
+              name = plusReference,
+              args = Seq(IdReferenceTyped(ArgumentSym("a", Integer))),
               tpe = Function(Integer, Integer)
             ),
             tpe = Function(Integer, Function(Integer, Integer))),
@@ -149,8 +194,8 @@ class TyperSpec extends Specification { def is = s2"""
             name = "liftMe2",
             argNames = Seq("b"),
             definition = ApExprTyped(
-              name = IdReferenceTyped("liftMe", TypeEnvironmentInfo("liftMe", StaticMethod("test", "liftMe", Seq(Integer), Function(Integer, Integer)), plusType)),
-              args = Seq(IdReferenceTyped("b", TypeEnvironmentInfo("b", Argument, Integer))),
+              name = IdReferenceTyped(FunctionSym("liftMe", Seq(Integer), Function(Integer, Integer), "test")),
+              args = Seq(IdReferenceTyped(ArgumentSym("b", Integer))),
               tpe = Function(Integer, Integer)
             ),
             tpe = Function(Integer, Function(Integer, Integer)))
@@ -159,10 +204,10 @@ class TyperSpec extends Specification { def is = s2"""
     )
 
   // Helpers
-  val plusReference =
-    IdReferenceTyped("plus", TypeEnvironmentInfo("plus", BuiltIn, plusType))
+  lazy val plusReference =
+    IdReferenceTyped(plusSym)
   def argReference(name: String, tpe: Type) =
-    IdReferenceTyped(name, TypeEnvironmentInfo(name, Argument, tpe))
+    IdReferenceTyped(ArgumentSym(name, tpe))
 
   def handleMultiApplyBindIssue =
     Module("test",
@@ -256,6 +301,15 @@ class TyperSpec extends Specification { def is = s2"""
     }
   }
 
+  def unifyAs(tpe: Type) = new Matcher[(Type, Type)] {
+    def apply[S <: (Type, Type)](tree: Expectable[S]) = {
+      val (a, b) = tree.value
+      val result = Typer.unify(a, b, NoPosition)(TyperEnvironment(defaultTypeEnv, Map.empty))._2
+      if(result == tpe) success("", tree)
+      else failure(s"Failed to unify ($a, $b), expected $tpe, found $result", tree)
+    }
+  }
+
   lazy val isType = {
     val a = newVariable
     Function(a, a)
@@ -263,9 +317,8 @@ class TyperSpec extends Specification { def is = s2"""
   lazy val plusType = {
     FunctionN(Integer, Integer, Integer)
   }
-
+  lazy val plusSym = BuiltInFunctionSym("plus", plusType)
+  lazy val isSym = BuiltInFunctionSym("is", isType)
   lazy val defaultTypeEnv =
-    TypeEnv.dumbEnvironment(Seq(
-      TypeEnvironmentInfo("is", BuiltIn, isType),
-      TypeEnvironmentInfo("plus", BuiltIn, plusType)))
+    new BuiltInSymbolTable(Seq(isSym, plusSym))
 }

@@ -3,6 +3,7 @@ package doge.compiler.std
 
 import doge.compiler.backend.{MethodWriter, MethodWriterState}
 import doge.compiler.std
+import doge.compiler.symbols.{BuiltInSymbolTable, SymbolTable}
 import doge.compiler.types.TypeSystem.Type
 import doge.compiler.types._
 import org.objectweb.asm.Label
@@ -18,7 +19,6 @@ object Booleans extends BuiltInType {
 
   val IF = "ifs"
 
-
   val ifType = {
     val result = TypeSystem.newVariable
     TypeSystem.FunctionN(
@@ -29,21 +29,15 @@ object Booleans extends BuiltInType {
     )
   }
 
-  override val typeTable: Seq[TypeEnvironmentInfo] =
-    Seq(
-      TypeEnvironmentInfo(IF, BuiltIn, ifType)
-    )
-
+  override val symbolTable: SymbolTable =
+     new BuiltInSymbolTable(Seq(BuiltInSymbolTable.Function(IF, ifType)))
 
   override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
     case ApExprTyped(i, Seq(check, left, right), tpe, pos) if i.name == IF => ifs(check, left, right, tpe)
   }
-
-
   override val visitSignatureInternal: PartialFunction[(SignatureVisitor, Type), Unit] = {
     case (sv, TypeSystem.Bool) => sv.visitBaseType('Z')
   }
-
 
 
 

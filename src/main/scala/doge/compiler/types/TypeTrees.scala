@@ -2,6 +2,7 @@ package doge.compiler.types
 
 import doge.compiler.ast._
 import TypeSystem.Type
+import doge.compiler.symbols.{DogeSymbol, DogeLanguageSymbol}
 import scala.util.parsing.input.{NoPosition, Position}
 
 /** Reimplementation of the AST, but with types. */
@@ -9,7 +10,7 @@ sealed trait TypedAst {
   def tpe: Type
   def pos: Position
 }
-case class LetExprTyped(name: String, argNames: Seq[String], definition: TypedAst, tpe: Type, pos: Position = NoPosition) extends TypedAst {
+case class LetExprTyped(name: String, argNames: Seq[String], tpe: Type, definition: TypedAst, pos: Position = NoPosition) extends TypedAst {
   def returnType: Type = definition.tpe
 
   def argTypes: Seq[Type] = {
@@ -46,9 +47,15 @@ case class BoolLiteralTyped(value: Boolean, pos: Position = NoPosition) extends 
   override def tpe = TypeSystem.Bool
 }
 
-case class IdReferenceTyped(name: String, env: TypeEnvironmentInfo, pos: Position = NoPosition) extends TypedAst {
-  override def tpe = env.tpe
-  override def toString = s"<${env.location}>$name[$tpe]</${env.location}>"
+case class IdReferenceTyped(sym: DogeSymbol, pos: Position = NoPosition) extends TypedAst {
+  def name: String = sym.name
+  override def tpe = sym.tpe
+  override def toString = s"<${sym}>"
+
+  override def equals(other: Any): Boolean = other match {
+    case x: IdReferenceTyped => (x.name == name) && (x.tpe == tpe)
+    case _ => false
+  }
 }
 
 case class ModuleTyped(name: String, definitions: Seq[LetExprTyped]) extends TypedAst {

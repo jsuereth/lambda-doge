@@ -1,5 +1,6 @@
 package doge.compiler.closures
 
+import doge.compiler.symbols.ScopeSymbolTable.{Argument => ArgumentSym, Function => FunctionSym}
 import doge.compiler.types.TypeSystem.{Function, Type}
 import doge.compiler.types._
 
@@ -10,10 +11,12 @@ import doge.compiler.types._
  * i.e. any built-in function is automatically encoded
  * in a local method which can be lifted.
  *
- * This handles not just partially applied methods, it (TBD) handles closure syntax.
+ * Additionally, this will attempt to manipulate the tree such that any closure is applied
+ * one argument at a time in "ApExpr".  I.e.  code that would have bean x(y,z) if x is closure A -> B -> C, then
+ * this will alter the tree to be x(y)(z), which is more directly what happens at runtime.
  *
- * In the future, this should also ensure that any legitimate closures
- * are lifted.
+ *
+ * This handles not just partially applied methods, it (TBD) handles closure syntax.
  */
 object ClosureLift {
 
@@ -68,8 +71,8 @@ object ClosureLift {
   object IsBuiltIn {
     def unapply(ast: TypedAst): Boolean =
       ast match {
-        case IdReferenceTyped(_, Location(BuiltIn), _) => true
-        case ApExprTyped(IdReferenceTyped(_, Location(BuiltIn), _), _, _, _) => true
+        case IdReferenceTyped(sym, _) => sym.isBuiltIn
+        case ApExprTyped(IdReferenceTyped(sym, _), _, _, _) => sym.isBuiltIn
         case _ => false
       }
   }
@@ -104,19 +107,19 @@ object ClosureLift {
            val lambdaMethodName = makeMethodName(l.name)
            // The underlying lambda we're lifting.
            val liftedZero = {
+             val args: Seq[TypedAst] =
+               for((name, tpe) <- liftedArgNames)
+               yield IdReferenceTyped(ArgumentSym(name, tpe), ap.pos)
              LetExprTyped(lambdaMethodName, liftedArgNames.map(_._1),
-               ApExprTyped(ap.name,
-                 for((name, tpe) <- liftedArgNames)
-                 yield IdReferenceTyped(name, TypeEnvironmentInfo(name, Argument, tpe)),
-                 returnType,
-                 ap.pos
-               )
-               , ap.name.tpe)
+               ap.name.tpe,
+               ApExprTyped(ap.name, args, returnType, ap.pos),
+               ap.pos)
            }
            additionalLets = liftedZero +: additionalLets
            // Now we lift this non-built-in partial application into helper lambdas recursively.
+           val lambdaReferenceSym = FunctionSym(lambdaMethodName, allArgTypes, returnType, moduleClassName)
            liftImpl(ApExprTyped(
-             IdReferenceTyped(lambdaMethodName, TypeEnvironmentInfo(lambdaMethodName, StaticMethod(moduleClassName, lambdaMethodName, allArgTypes, returnType), ap.name.tpe)),
+             IdReferenceTyped(lambdaReferenceSym, ap.name.pos),
              ap.args.map(liftImpl),
              ap.tpe))
          // We only need to lift if the partial application is more than one extra method.
@@ -128,22 +131,29 @@ object ClosureLift {
            val newArgList = allArgTypes.zipWithIndex.map(x => s"arg${x._2}" -> x._1)
 
            val liftedDelegate = {
+             val args: Seq[TypedAst] =
+               for((name, tpe) <- newArgList)
+               yield {
+                 val argSym = ArgumentSym(name, tpe)
+                 IdReferenceTyped(argSym)
+               }
              LetExprTyped(newMethodName, newArgList.map(_._1),
+               ap.name.tpe,
                ApExprTyped(ap.name,
-                 for((name, tpe) <- newArgList)
-                 yield IdReferenceTyped(name, TypeEnvironmentInfo(name, Argument, tpe)),
+                 args,
                  resultType,  // TODO - fix this?
                  ap.pos
-               ), ap.name.tpe)
+               ))
            }
            additionalLets = liftImpl(liftedDelegate).asInstanceOf[LetExprTyped] +: additionalLets
            // TODO - figure out the type of the new function...
+           val newMethodSym = FunctionSym(newMethodName, allArgTypes, resultType, moduleClassName)
            ApExprTyped(
-             IdReferenceTyped(newMethodName, TypeEnvironmentInfo(newMethodName, StaticMethod(moduleClassName, newMethodName, allArgTypes, resultType), ap.name.tpe)),
+             IdReferenceTyped(newMethodSym),
              ap.args.map(liftImpl),
              ap.tpe)
          case ApExprTyped(name, args, tpe, pos) => ApExprTyped(name, args.map(liftImpl), tpe, pos)
-         case LetExprTyped(name, arg, defn, tpe, pos) => LetExprTyped(name, arg, liftImpl(defn), tpe, pos)
+         case LetExprTyped(name, arg, tpe, defn, pos) => LetExprTyped(name, arg, tpe, liftImpl(defn), pos)
          case _ => expr
        }
 
@@ -162,23 +172,20 @@ object ClosureLift {
     val unclosedArgs =
       for {
         (name, tpe) <- l.argNames.zip(allArgTypes)
-      } yield IdReferenceTyped(name, TypeEnvironmentInfo(name, Argument, tpe), l.pos)
+      } yield IdReferenceTyped(ArgumentSym(name, tpe), l.pos)
 
     val allArgNames =
       (closedArgs ++ unclosedArgs).map(_.name)
     val implMethod = LetExprTyped(
        name = methodName,
        allArgNames,
-       l.definition,
        l.tpe,
+       l.definition,
        l.pos
     )
     // TODO - The type for this method needs to be very different.  i.e. We need to construct
     // arg types from all closed variables and such.  For now, we'll cheat and see what happens.
-    val implMethodRef = IdReferenceTyped(
-      methodName,
-      TypeEnvironmentInfo(methodName, StaticMethod(className, methodName, allArgTypes, returnType), l.tpe)
-    )
+    val implMethodRef = IdReferenceTyped(FunctionSym(methodName, allArgTypes, returnType, className))
     val callImplMethodExpr =
       ApExprTyped(
          implMethodRef,
@@ -190,7 +197,7 @@ object ClosureLift {
 
   // TODO - this doesn't really handle scoping well...
   def closedRefs(l: TypedAst): Seq[IdReferenceTyped] = l match {
-    case i: IdReferenceTyped if i.env.location == Argument => Seq(i)
+    case i: IdReferenceTyped if i.sym.isInstanceOf[ArgumentSym] => Seq(i)
     case ApExprTyped(id, args, _, _) => args.flatMap(closedRefs) ++ closedRefs(id)
     // TODO - handle nested lambda expressions *OR* ensure we always work from deepest to outer scope.
     // We specifically ignore let expressions

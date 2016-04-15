@@ -2,7 +2,6 @@ package doge.compiler.ast
 
 
 import doge.compiler.types.TypeSystem
-
 import scala.util.parsing.input.Positional
 
 

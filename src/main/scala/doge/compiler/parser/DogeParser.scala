@@ -29,6 +29,19 @@ object DogeParser extends RegexParsers {
   def isSafeId(n: String) =
     !Set("WOW", "SO", "MANY", "VERY", "SUCH", "!", "MUCH").contains(n)
 
+  lazy val javaId: Parser[String] = {
+    val nme: Parser[String] = "[a-zA-Z]+".r
+    val hsh: Parser[String] = literal("#")
+    val dot: Parser[String] = literal(".")
+    val cls: Parser[String] = nme ~ (dot ~> nme).* ^^ {
+      case n ~ ns => (n :: ns).mkString(".")
+    }
+    cls ~ hsh ~ opt(hsh) ~ nme ^^ {
+      case c ~ _ ~ Some(_) ~ n => s"${c}##${n}"
+      case c ~ _ ~ None ~ n => s"${c}#${n}"
+    }
+  }
+
   lazy val idRaw: Parser[String] = "[^!\\W]+".r
 
   lazy val id: Parser[String] = idRaw ^? {
@@ -81,7 +94,7 @@ object DogeParser extends RegexParsers {
 
 
   lazy val idRef: Parser[IdReference] =
-    positioned(id map { name => IdReference(name) })
+    positioned((javaId | id) map { name => IdReference(name) })
 
   // TODO - Fail to parse invalid literals.
   lazy val intLiteral: Parser[IntLiteral] =

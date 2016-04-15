@@ -2,6 +2,7 @@ package doge.compiler
 package std
 
 
+import doge.compiler.symbols.{DogeSymbol, BuiltInSymbolTable, SymbolTable}
 import org.objectweb.asm.Opcodes._
 import doge.compiler.types._
 import org.objectweb.asm.signature.SignatureVisitor
@@ -14,32 +15,34 @@ import Scalaz._
 
 /** Built in Tuple2 types/namespace. */
 object DogeTuple2 extends BuiltInType {
-
-  // Actual names in the language
-  val FIRST = "fst"
-  val SECOND = "snd"
-  val CONSTRUCTOR = "tuple2"
   // The name of the type.
   val name = "Tuple2"
 
-  // Typing table, for running typer.
-  override val typeTable = Seq[TypeEnvironmentInfo](
-    TypeEnvironmentInfo(FIRST, BuiltIn, {
-      val a = newVariable
-      val b = newVariable
-      Function(TypeConstructor(name, Seq(a, b)), a)
-    }),
-    TypeEnvironmentInfo(SECOND, BuiltIn, {
-      val a = newVariable
-      val b = newVariable
-      Function(TypeConstructor(name, Seq(a, b)), b)
-    }),
-    TypeEnvironmentInfo(CONSTRUCTOR, BuiltIn, {
-      val a = newVariable
-      val b = newVariable
-      FunctionN(TypeConstructor(name, Seq(a, b)), a, b)
-    })
-  )
+  // Actual names in the language
+  val FIRST = "fst"
+  val FirstType = {
+    val a = newVariable
+    val b = newVariable
+    Function(TypeConstructor(name, Seq(a, b)), a)
+  }
+  val FirstSym = BuiltInSymbolTable.Function(FIRST, FirstType)
+  val SECOND = "snd"
+  val SecondType = {
+    val a = newVariable
+    val b = newVariable
+    Function(TypeConstructor(name, Seq(a, b)), b)
+  }
+  val SecondSym = BuiltInSymbolTable.Function(SECOND, SecondType)
+  val CONSTRUCTOR = "tuple2"
+  val ConstructorType = {
+    val a = newVariable
+    val b = newVariable
+    FunctionN(TypeConstructor(name, Seq(a, b)), a, b)
+  }
+  val ConstructorSym = BuiltInSymbolTable.Function(CONSTRUCTOR, ConstructorType)
+  override val symbolTable: SymbolTable =
+    new BuiltInSymbolTable(Seq(FirstSym, SecondSym, ConstructorSym))
+
 
   override val visitSignatureInternal: PartialFunction[(SignatureVisitor, Type), Unit] = {
     case (sv, TypeConstructor(`name`, Seq(arg1, arg2))) =>
@@ -48,9 +51,9 @@ object DogeTuple2 extends BuiltInType {
 
   // Actual implementation of the methods exposed.
   override val backend: PartialFunction[TypedAst, State[MethodWriterState, Unit]] = {
-    case ApExprTyped(IdReferenceTyped(CONSTRUCTOR, _, _), Seq(left, right), tpe, _) => constructorImpl(left, right)
-    case ApExprTyped(IdReferenceTyped(FIRST, _, _), Seq(tuple), tpe, _) => fstMethodImpl(tuple)
-    case ApExprTyped(IdReferenceTyped(SECOND, _, _), Seq(tuple), tpe, _) => fstMethodImpl(tuple)
+    case ApExprTyped(IdReferenceTyped(sym, _), Seq(left, right), tpe, _) if sym.original == ConstructorSym => constructorImpl(left, right)
+    case ApExprTyped(IdReferenceTyped(sym, _), Seq(tuple), tpe, _) if sym.original == FirstSym=> fstMethodImpl(tuple)
+    case ApExprTyped(IdReferenceTyped(sym, _), Seq(tuple), tpe, _) if sym.original == SecondSym => sndMethodImpl(tuple)
   }
 
   private def fstMethodImpl(tuple: TypedAst): State[MethodWriterState, Unit] = {
@@ -65,10 +68,11 @@ object DogeTuple2 extends BuiltInType {
 
 
   private def sndMethodImpl(tuple: TypedAst): State[MethodWriterState, Unit] = {
+    val sndType = sndTupleType(tuple.tpe)
     import MethodWriter._
     for {
       _ <- placeOnStack(tuple)
-      _ <- rawInsn(_.visitLdcInsn(1))
+      _ <- rawInsn(_.visitInsn(ICONST_1))
       _ <- rawInsn(_.visitInsn(AALOAD))
       _ <- unbox(sndTupleType(tuple.tpe))
     } yield ()

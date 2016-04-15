@@ -20,8 +20,15 @@ class ParserSpec extends Specification { def is = s2"""
       parse type constructors                        $parseTypeConstructors
       parse function types                           $parseFunctionTypes
       parse lambda expressions                       $parseLambda
+      parse java identifies                          $parseJavaIdentifiers
                                                         """
 
+
+  def parseJavaIdentifiersBasic =
+    "java.lang.String#new" must parseAs(javaId, "java.lang.String#new")
+  def parseJavaIdentifiers = parseJavaIdentifiersBasic and parseJavaIdentifiersInRef
+  def parseJavaIdentifiersInRef =
+    "java.lang.String#new" must parseAs(expr, IdReference("java.lang.String#new"))
   def parseConcreteTypes =
     "Int" must parseAs(typeParser, TypeSystem.Integer)
   def parseTypeConstructors =
@@ -70,7 +77,7 @@ class ParserSpec extends Specification { def is = s2"""
       parseAll(expr, s.value) match {
         case Success(`value`, _) => success("successfully parsed", s)
         case Success(wrong, _) => failure(s"Unexpected parser result\n\t   Found: $wrong\n\tExpected: $value", s)
-        case result => failure(s"Failed to parse expressions, got $result", s)
+        case result => failure(s"Failed to parse expressions, [${s.value}] got\n$result", s)
       }
     }
   }

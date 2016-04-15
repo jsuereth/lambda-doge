@@ -3,8 +3,9 @@ package doge.compiler
 import java.io.File
 
 import doge.compiler.ast.{LetExpr, DogeAst}
-import doge.compiler.backend.GenerateClassFiles
+import doge.compiler.backend.{AsmDebug, GenerateClassFiles}
 import doge.compiler.closures.ClosureLift
+import doge.compiler.symbols.{ClasspathSymbolTable, SymbolTable, BuiltInSymbolTable}
 import doge.compiler.types._
 
 object Compiler {
@@ -26,10 +27,13 @@ object Compiler {
 
 
   import types._
-  val builtInTypes = TypeEnv.dumbEnvironment(
-    Seq(TypeEnvironmentInfo("IS", BuiltIn, idType), TypeEnvironmentInfo("PrintLn", BuiltIn, printlnType)) ++
-    // TODO - Some better semantic here.
-    std.BuiltInType.all.typeTable)
+  val IsSym = BuiltInSymbolTable.Function("IS", idType)
+  val PrintLnSym = BuiltInSymbolTable.Function("PrintLn", printlnType)
+  val lameBuiltIns = new BuiltInSymbolTable(Seq(IsSym, PrintLnSym))
+  val builtInTypes =
+      SymbolTable.join(lameBuiltIns, std.BuiltInType.all.symbolTable)
+  val buildInAndJdkTypes =
+      SymbolTable.join(builtInTypes, ClasspathSymbolTable.boot)
 
   /** A very simple example of compiling DOGE script. */
   def compile(f: File, verbose: Boolean): File = {
@@ -40,16 +44,17 @@ object Compiler {
     } finally s.close()
   }
 
-  def compile(input: String, classDirectory: File, name: String, verbose: Boolean): File = {
-    def log(msg: String): Unit = if(verbose) System.err.println(msg)
+  def compile(input: String, classDirectory: File, name: String, verbose: Boolean): File = System.out.synchronized {
+    def log(msg: String): Unit = if(verbose) System.err.synchronized(System.err.println(msg))
     log(s"Compiling [$name]...")
     val parsed = parser.DogeParser.parseModule(input, name)
     log(s"  -- Parsed --\n${parsed}")
-    val typed = Typer.typeFull(parsed, builtInTypes)
+    val typed = Typer.typeFull(parsed, buildInAndJdkTypes)
     log(s"  -- Typed--\n${typed}")
     val closured = ClosureLift.liftClosures(typed)
     log(s"  -- Closure-Lifted --\n${closured}")
     val clsFile = GenerateClassFiles.makeClassfile(closured, classDirectory)
+    log(s" -- Bytecode --\n${AsmDebug.prettyPrintClass(clsFile)}")
     clsFile
   }
 
@@ -64,9 +69,9 @@ object Compiler {
       import pos._
       lineContents.take(column - 1).map { x => if (x == '\t') x else ' '} + "^"
     }*/
-    val verbose = args.exists(_ == "-v")
+    val verbose = args.exists(_ == "-v") || args.exists(_ == "--verbose")
 
-    for(arg <- args.filterNot(_ == "-v")) {
+    for(arg <- args.filterNot(_ == "-v").filterNot(_ == "--verbose")) {
       val f = new File(arg)
       try compile(f, verbose)
       catch {
