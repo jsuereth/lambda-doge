@@ -50,8 +50,7 @@ For example, let's create a file called `test.doge` with the following contents:
 
     WOW
     main
-    MUCH PrintLn
-    1 2 3!
+    MUCH PrintLn 1!
 
 Now, we can compile this file via the following command line:
 
@@ -61,7 +60,7 @@ And "run" the module via the following command:
 
     java -cp . test
 
-Which will print the output `123`.
+Which will print the output `1`.
 
 
 # Basics
@@ -183,11 +182,15 @@ Grabs the top of a list.  Note: This may throw an exception.
    
 Grabs a new list with all but the first element.
 
-## Lame hacks
+## Stdout
 
-    PrintLn :: Int => Int => Int => Int
+    Print :: a -> Unit
 
-Yes, the type is super lame.  Right now we encode this pretty dumb to call `System.out.print` a bunch of times, then a `println`.
+Prints the value passed (using .toString) to the console
+
+    PrintLn :: a -> Unit
+
+Prints the value passed (using .toString) to the console, as well as an end-of-line.
 
 
 
