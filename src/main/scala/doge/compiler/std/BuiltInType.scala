@@ -65,5 +65,5 @@ object BuiltInType {
   }
 
   // FOR now, all built-in-support is right here.
-  def all = Seq(DogeTuple2, Integers, Booleans, Lists).reduce(join)
+  def all = Seq(DogeTuple2, Integers, Booleans, Lists, StdOut).reduce(join)
 }

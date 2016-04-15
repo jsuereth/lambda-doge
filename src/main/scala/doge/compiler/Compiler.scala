@@ -28,8 +28,7 @@ object Compiler {
 
   import types._
   val IsSym = BuiltInSymbolTable.Function("IS", idType)
-  val PrintLnSym = BuiltInSymbolTable.Function("PrintLn", printlnType)
-  val lameBuiltIns = new BuiltInSymbolTable(Seq(IsSym, PrintLnSym))
+  val lameBuiltIns = new BuiltInSymbolTable(Seq(IsSym))
   val builtInTypes =
       SymbolTable.join(lameBuiltIns, std.BuiltInType.all.symbolTable)
   val buildInAndJdkTypes =

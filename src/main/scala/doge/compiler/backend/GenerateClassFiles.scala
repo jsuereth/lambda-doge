@@ -224,7 +224,6 @@ object MethodWriter {
       // TODO - how to handle id references?
       // TODO - move these into builtins...
       case ApExprTyped(i, Seq(id), _, _) if i.name == "IS" => placeOnStack(id)
-      case ApExprTyped(id, args, _, _) if id.name == "PrintLn" => builtInFunctions.println(args)
 
 
       // Now we handle simple "reference" type lookups.
@@ -416,39 +415,6 @@ object MethodWriter {
   def invokeVirtual(className: String, methodName: String, argCount: Int, tpe: Type, isInterface: Boolean) = State[MethodWriterState, Unit] { state =>
     state.mv.visitMethodInsn(INVOKEVIRTUAL, className, methodName, GenerateClassFiles.getFunctionSignature(tpe, argCount), isInterface)
     (state, ())
-  }
-
-
-  object builtInFunctions {
-
-    /** Loads the stdout variable. */
-    def stdout = getStatic("java/lang/System", "out", "Ljava/io/PrintStream;")
-    /** Prints an expression. */
-    def print(in: TypedAst): State[MethodWriterState, Unit] =
-     for {
-       out <- stdout
-       _ <- placeOnStack(in)
-       // TODO - convert to string if not already string.
-       _ <- invokeVirtual("java/io/PrintStream", "print", 1, TypeSystem.Function(in.tpe, TypeSystem.Unit), true)
-     } yield ()
-    /** Writes the println method. */
-    def println(args: Seq[TypedAst]): State[MethodWriterState, Unit] = {
-      type S[A] = State[MethodWriterState, A]
-      for {
-        _ <- args.toList.traverse[S, Unit](print)
-        _ <- emptyPrintln()
-      } yield ()
-    }
-
-    /** Prints an empty line. */
-    def emptyPrintln() =
-      stdout flatMap { _ =>
-        State[MethodWriterState,Unit] { state =>
-          state.mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/PrintStream", "println", "()V", true)
-          (state, ())
-        }
-      }
-
   }
 
   /** writes a method definition using the given state, returning the last expression result. */
